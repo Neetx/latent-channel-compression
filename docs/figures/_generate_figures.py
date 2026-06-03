@@ -83,8 +83,9 @@ def fig_bit_rate_ladder_n250():
     ax.set_xticklabels(bits)
     ax.set_xlabel("bits per coordinate (compression ratio vs fp32)")
     ax.set_ylabel("math500 accuracy (%)")
-    ax.set_title("Variant B bit-rate ladder — n=250, T4 fp32 b=4, seed=42\n"
-                 f"({subtitle})")
+    ax.set_title("Inter-agent latent channel: math500 accuracy vs. compression\n"
+                 "n=250, sampled decoding (T4 fp32) — no degradation detected "
+                 "(two-proportion $z$-test, all $p>0.4$)", fontsize=11)
     ax.set_ylim(0, 100)
     ax.axhline(75.2, color=COLOR_GOOD, linestyle="--", linewidth=1, alpha=0.7,
                label="baseline 75.2%")
@@ -97,9 +98,6 @@ def fig_bit_rate_ladder_n250():
                 f"{v:.1f}%\n({c}/{n})", ha="center", va="bottom", fontsize=9)
 
     ax.legend(loc="lower right")
-    fig.text(0.5, -0.02,
-             "No sampled accuracy degradation detected at n=250 (2-prop z-test, all p > 0.4)",
-             ha="center", fontsize=9, style="italic")
 
     fig.savefig(OUT / "bit_rate_ladder_n250.png")
     plt.close(fig)
