@@ -1,0 +1,14 @@
+{
+  "id": "<YOUR_KAGGLE_USERNAME>/rmas-diagnostic-solver-only-v4",
+  "title": "rmas diagnostic solver only v4",
+  "code_file": "solver_only.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": "true",
+  "enable_gpu": "true",
+  "enable_internet": "true",
+  "dataset_sources": [],
+  "competition_sources": [],
+  "kernel_sources": [],
+  "model_sources": []
+}

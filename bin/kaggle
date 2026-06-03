@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Project-local Kaggle CLI wrapper.
+#
+# Reads the bearer token from .kaggle/access_token (gitignored) and runs the
+# real CLI via uvx in an isolated Python 3.11+ env, since Kaggle CLI 2.x
+# requires 3.11 and our project venv is on 3.10 to match RecursiveMAS.
+#
+# Usage:  ./bin/kaggle <subcommand> [args...]   (from project root)
+# Example: ./bin/kaggle kernels list --mine -p 1
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+token_file="$repo_root/.kaggle/access_token"
+
+if [[ ! -s "$token_file" ]]; then
+  echo "error: missing or empty $token_file" >&2
+  echo "       put your KGAT_... bearer token in that file, chmod 600." >&2
+  exit 1
+fi
+
+# Strip any trailing whitespace/newline from the token file.
+token="$(tr -d '[:space:]' < "$token_file")"
+
+KAGGLE_API_TOKEN="$token" \
+  exec uvx --from 'kaggle @ git+https://github.com/Kaggle/kaggle-cli.git' \
+    kaggle "$@"

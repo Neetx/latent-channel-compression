@@ -1,0 +1,14 @@
+{
+  "id": "<YOUR_KAGGLE_USERNAME>/recursivelink-phase-0-real-adapter-sweep",
+  "title": "RecursiveLink Phase 0 real-adapter sweep",
+  "code_file": "phase0.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": "true",
+  "enable_gpu": "true",
+  "enable_internet": "true",
+  "dataset_sources": [],
+  "competition_sources": [],
+  "kernel_sources": [],
+  "model_sources": []
+}

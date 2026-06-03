@@ -1,0 +1,37 @@
+All Rights Reserved
+
+Copyright (c) 2026 The Author(s) of this repository.
+
+This repository is made publicly visible for transparency, review, and
+scientific reproducibility ONLY. It is NOT open-source software, and no license
+is granted to use it beyond reading.
+
+You MAY:
+  - View and read the source, documentation, and results in this repository.
+
+You MAY NOT, without the prior, explicit, written permission of the copyright
+holder:
+  - use, run, or deploy any part of this work for any purpose;
+  - copy, reproduce, or republish any part of this work;
+  - modify, adapt, translate, or create derivative works from it;
+  - redistribute, sublicense, sell, or otherwise transfer it, in whole or in
+    part, in source or compiled form;
+  - incorporate any part of it into another project, product, model, dataset,
+    or publication.
+
+All rights not expressly granted above are reserved by the copyright holder.
+Forking on a hosting platform for the sole purpose of viewing, where required by
+that platform's terms of service, does not grant any of the rights withheld
+above.
+
+This work builds on, and references, third-party projects (e.g. RecursiveMAS and
+TurboQuant). Those projects are governed by their own licenses; nothing here
+grants or restricts any rights in them.
+
+To request permission for any use, contact the copyright holder.
+
+THE WORK IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY ARISING
+FROM, OUT OF, OR IN CONNECTION WITH THE WORK OR ITS USE.

@@ -1,0 +1,10 @@
+[
+  {
+    "path": "experiments/variant_b_ladder_t4_kaggle/dataset_pkg/lqc_src.tar.gz",
+    "size_bytes": 8638,
+    "sha256": "897de8097e5215c3fcdc6aee8a72acc5c4d571423c2b2e2255385c1dcf9b4b06",
+    "kind": "file",
+    "ok": true,
+    "error": null
+  }
+]
