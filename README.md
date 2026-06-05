@@ -38,6 +38,7 @@ The powered greedy T=3 run measured ~1,152 latent token-vectors per math500 prob
 | [REPRODUCIBILITY.md](REPRODUCIBILITY.md) | End-to-end external reproduction: run, fetch, verify, analyze |
 | [experiments/README.md](experiments/README.md) | How to reproduce each result |
 | [writeup/README.md](writeup/README.md) | Write-up + build instructions |
+| [ROADMAP.md](ROADMAP.md) | Where the research goes next (future work) |
 
 ## Quick reproduction
 
