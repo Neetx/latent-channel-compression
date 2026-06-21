@@ -17,8 +17,8 @@ by the headline experiment.
 - recorded via `src/adapters/patch.py:QuantStats` with `record=True`
 
 **Tier 2 — logit-level distributional fidelity at egress** (paired REF vs INT4):
-- per-decode-position **MSE / KL(p_REF ‖ p_INT) / JS** over a top-K=512 union support
-  with a tail-mass correction
+- per-decode-position **MSE / KL(p_REF ‖ p_INT) / JS** over the union of the captured
+  top-K supports, with a residual-tail correction that does not double-count union tokens
 - **per-problem correctness** for a paired design (upstream `--result_jsonl`)
 - **paired bootstrap Δacc + TOST equivalence test** (ε=2pp pre-specified, α=0.05) →
   a formal EQUIVALENT / NOT_EQUIVALENT / INCONCLUSIVE verdict per T
@@ -31,10 +31,12 @@ All distortion/divergence math runs in fp32 regardless of pipeline dtype.
    to force `output_scores=True` on every call site, captures the top-K logits +
    indices per generated step (capped at `MAX_LOGIT_POSITIONS`), and returns the raw
    `sequences` tensor so all upstream call sites stay backward-compatible.
-2. Both the REF (bits=0) and INT4 (bits=4) runs use **greedy decoding + identical
-   seed + identical data + identical batching**, so the sequence of `generate()`
-   calls is structurally identical and can be paired positionally (batch-by-batch).
-   `analyze.py` truncates each pair to `min(T_REF, T_INT)` positions.
+2. Both REF (bits=0) and INT4 (bits=4) use **greedy decoding + identical seed +
+   identical data + identical batching**. Only the fixed primary calls, one per input
+   batch, are paired positionally. Conditional answer-retry calls are explicitly
+   excluded because their presence can differ after the trajectories diverge.
+   `analyze.py` truncates each retained pair to `min(T_REF, T_INT)` positions and
+   reports the number of excluded calls.
 3. Per-problem correctness comes from upstream's `--result_jsonl`. **Sequential-Light
    runs with `num_rollouts=1`, which produces a FLAT record** (`correct` at the top
    level, no `rollouts` key). The parser handles both that and the nested
@@ -72,9 +74,14 @@ dump, not the transient GPU retention.
 
 ## How to run
 
-There are two backends. **Modal A100 fp32 is the current primary path** (the Kaggle
-weekly GPU quota was exhausted on 2026-06-02). Both reuse the identical, unit-tested
-patch functions in `kernel_pkg/fidelity_kernel.py`.
+There are **three backends**, all reusing the identical, unit-tested patch functions in
+`kernel_pkg/fidelity_kernel.py`:
+- **Modal A100 fp32** (`modal_pkg/`) — the original primary cloud path.
+- **Kaggle T4 fp32** (`kernel_pkg/`) — free cloud path (weekly quota).
+- **Local single-GPU bf16** (`local_pkg/`) — runs on a 16 GB consumer card (RTX 5070 Ti).
+  This backend completed four cross-task/tier cells; see
+  [`local_pkg/README.md`](local_pkg/README.md) and the canonical
+  [`REPORT_08`](../../docs/reports/08_local_cross_cell_generalization.md).
 
 ### Backend A — Modal A100 fp32 (primary; $1/day budget)
 
@@ -215,7 +222,7 @@ re-running the same `push_fidelity_kernel.sh` calls and the same `analyze.py` co
 |---|---|
 | `kernel_pkg/fidelity_kernel.py` | Kaggle kernel. Pure, testable functions (`patch_run_py`, `patch_inference_mas`, `parse_per_problem_jsonl`) + a `main()` holding all side effects. Applies 6 run.py patches + 3 inference_mas.py patches, runs `python run.py`, dumps stats/logits/per-problem JSON. |
 | `kernel_pkg/kernel-metadata.json` | Metadata template (the push helper overwrites the slug + dataset_sources per run). |
-| `analysis/analyze.py` | Post-hoc; consumes downloaded JSON + NPZ, builds `results.md` + matplotlib plots + raw.npz. Runnable directly (`python .../analyze.py`). |
+| `analysis/analyze.py` | Post-hoc; consumes downloaded JSON + NPZ, pairs primary calls only, expands the top-K union with corrected residual-tail accounting, and builds `results.md` + plots + raw.npz. |
 | `analysis/results/` | Generated outputs (gitignored if large). |
 | `../../tests/test_fidelity_kernel.py` | Validates the patches against real upstream + the JSONL parser (both schemas). |
 | `../../tests/test_fidelity_analyze.py` | Validates correctness alignment, union expansion, logit metrics from synthetic NPZ, and end-to-end aggregation. |

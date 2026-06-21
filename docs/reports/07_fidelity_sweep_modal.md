@@ -1,5 +1,14 @@
 # REPORT 07 — Tier 2 fidelity sweep on Modal A100 (paired REF vs INT4)
 
+> **Analyzer addendum (2026-06-21).** This report preserves the original cloud
+> analysis for auditability. The analyzer has since been corrected to pair only fixed
+> primary generate calls (excluding condition-dependent answer retries) and to avoid
+> double-counting union-token probability in the residual top-K tail. Therefore the
+> cloud KL and divergence values below are **legacy estimates** and should not be
+> compared numerically with corrected local values until the cloud NPZs are reanalyzed.
+> Accuracy, REF-vs-REF determinism, and per-call channel statistics are unaffected.
+> See [REPORT_08](08_local_cross_cell_generalization.md) for the corrected method.
+
 **Date:** 2026-06-02
 **Phase:** Tier 2 fidelity instrumentation — continuous distortion + distributional
 fidelity metrics alongside accuracy, swept over channel-traversal depth T.

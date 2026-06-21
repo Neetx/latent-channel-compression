@@ -182,7 +182,12 @@ def paired_correctness(ref: dict, intq: dict) -> Tuple[np.ndarray, np.ndarray]:
 
 
 def dist_over_union(
-    vals: np.ndarray, idxs: np.ndarray, full_lse: float, union: np.ndarray
+    vals: np.ndarray,
+    idxs: np.ndarray,
+    full_lse: float,
+    union: np.ndarray,
+    *,
+    tail_log: float | None = None,
 ) -> np.ndarray:
     """Proper probability vector over ``union`` tokens + 1 residual-tail bucket.
 
@@ -194,19 +199,29 @@ def dist_over_union(
     larger than the run's smallest kept logit; we approximate its prob by that
     boundary prob ``exp(min_kept - full_lse)`` (a tight upper bound, not the −inf
     that produced NaNs / blow-ups in the earlier logit-space construction). The
-    final bucket holds the residual mass ``1 − Σ top-K probs``. The vector is
-    renormalized to sum to 1.
+    final bucket holds the residual tail after subtracting the approximated
+    probabilities assigned to union tokens missing from this run's top-K. This
+    avoids double-counting those tokens in both the union and tail buckets. The
+    vector is renormalized to sum to 1.
     """
     full_lse = float(full_lse)
     vals = np.asarray(vals, dtype=np.float64)
     logit = {int(i): float(v) for i, v in zip(idxs, vals)}
     boundary = float(vals.min()) if vals.size else full_lse
     probs = np.empty(union.size + 1, dtype=np.float64)
+    missing_mass = 0.0
     for j, u in enumerate(union):
-        lv = logit.get(int(u), boundary)
+        is_missing = int(u) not in logit
+        lv = boundary if is_missing else logit[int(u)]
         probs[j] = np.exp(lv - full_lse)
+        if is_missing:
+            missing_mass += probs[j]
     topk_mass = float(np.exp(vals - full_lse).sum())
-    probs[-1] = max(0.0, 1.0 - topk_mass)
+    if tail_log is None:
+        tail_mass = max(0.0, 1.0 - topk_mass)
+    else:
+        tail_mass = float(np.exp(float(tail_log) - full_lse))
+    probs[-1] = max(0.0, tail_mass - missing_mass)
     s = probs.sum()
     if not np.isfinite(s) or s <= 0:
         probs[:] = 1.0 / probs.size  # degenerate position -> uniform (KL=0 vs uniform)
@@ -230,11 +245,20 @@ def js_probs(p: np.ndarray, q: np.ndarray, eps: float = 1e-12) -> float:
 
 
 def compute_logit_metrics_pair(
-    ref_npz: Path, int_npz: Path, *, max_positions_per_batch: int = 256
+    ref_npz: Path,
+    int_npz: Path,
+    *,
+    max_positions_per_batch: int = 256,
+    max_batches: int | None = None,
 ) -> dict:
     """Load both kernels' top-K logit dumps, align per (batch, step, item),
     compute MSE/KL/JS over the union-support approximation, return aggregated
     per-problem means.
+
+    ``max_batches`` is useful when the capture contains conditional answer-retry
+    calls after the fixed primary solver batches. Pairing retries by ordinal is
+    invalid when REF and INT4 retry different examples; limiting to the known
+    number of primary batches keeps the comparison problem-aligned.
 
     Memory: union size is ≤ 2K = 1024, processed in fp64 → ~kB per position.
     """
@@ -244,15 +268,25 @@ def compute_logit_metrics_pair(
     int_z = np.load(int_npz, allow_pickle=True)
     n_ref = int(ref_z["n_batches"]) if "n_batches" in ref_z else 0
     n_int = int(int_z["n_batches"]) if "n_batches" in int_z else 0
-    n_batches = min(n_ref, n_int)
-    print(f"  pairing {n_batches} logit batches (REF={n_ref}, INT={n_int})")
+    n_batches_available = min(n_ref, n_int)
+    n_batches = n_batches_available
+    if max_batches is not None:
+        if max_batches <= 0:
+            raise ValueError(f"max_batches must be positive, got {max_batches}")
+        n_batches = min(n_batches, max_batches)
+    print(
+        f"  pairing {n_batches} logit batches (available REF={n_ref}, INT={n_int}, "
+        f"limit={max_batches})"
+    )
 
     per_problem_mse: List[float] = []
     per_problem_kl: List[float] = []
     per_problem_js: List[float] = []
     matched_lens: List[int] = []   # aligned positions before the greedy paths diverge
+    prefix_lens: List[int] = []
     n_items = 0
     n_diverged = 0
+    max_positions_seen = 0
 
     for b in range(n_batches):
         try:
@@ -269,6 +303,7 @@ def compute_logit_metrics_pair(
             continue
         # Shapes (T, B, K). Truncate to shortest T and shared B.
         T = min(r_vals.shape[0], i_vals.shape[0], max_positions_per_batch)
+        max_positions_seen = max(max_positions_seen, T)
         B = min(r_vals.shape[1], i_vals.shape[1])
         for b_i in range(B):
             n_items += 1
@@ -278,8 +313,14 @@ def compute_logit_metrics_pair(
             diverged = False
             for t in range(T):
                 union = np.union1d(r_idxs[t, b_i], i_idxs[t, b_i])
-                pr = dist_over_union(r_vals[t, b_i], r_idxs[t, b_i], r_fll[t, b_i], union)
-                pi = dist_over_union(i_vals[t, b_i], i_idxs[t, b_i], i_fll[t, b_i], union)
+                pr = dist_over_union(
+                    r_vals[t, b_i], r_idxs[t, b_i], r_fll[t, b_i], union,
+                    tail_log=r_tl[t, b_i],
+                )
+                pi = dist_over_union(
+                    i_vals[t, b_i], i_idxs[t, b_i], i_fll[t, b_i], union,
+                    tail_log=i_tl[t, b_i],
+                )
                 kl = kl_probs(pr, pi)
                 js = js_probs(pr, pi)
                 mse = float(np.mean((pr - pi) ** 2))  # MSE on PROBABILITIES (bounded)
@@ -299,6 +340,7 @@ def compute_logit_metrics_pair(
                 per_problem_kl.append(float(np.mean(kl_pos)))
                 per_problem_js.append(float(np.mean(js_pos)))
                 matched_lens.append(len(mse_pos))
+                prefix_lens.append(len(mse_pos) - (1 if diverged else 0))
             if diverged:
                 n_diverged += 1
     return {
@@ -306,7 +348,16 @@ def compute_logit_metrics_pair(
         "per_problem_kl": np.array(per_problem_kl, dtype=np.float64),
         "per_problem_js": np.array(per_problem_js, dtype=np.float64),
         "mean_matched_len": float(np.mean(matched_lens)) if matched_lens else 0.0,
+        "mean_prefix_len": float(np.mean(prefix_lens)) if prefix_lens else 0.0,
         "divergence_rate": (n_diverged / n_items) if n_items else 0.0,
+        "n_items": n_items,
+        "n_diverged": n_diverged,
+        "n_batches_paired": n_batches,
+        "n_batches_ref": n_ref,
+        "n_batches_int": n_int,
+        "n_retry_batches_ref_excluded": max(0, n_ref - n_batches),
+        "n_retry_batches_int_excluded": max(0, n_int - n_batches),
+        "max_positions_seen": max_positions_seen,
     }
 
 
@@ -392,7 +443,15 @@ def aggregate_per_T(
         int_npz = _find_logits_npz(intq, logit_dir, int_bits, T)
         if ref_npz is not None and int_npz is not None:
             print(f"  T={T}: computing paired logit metrics from {ref_npz.parent.name}/ + {int_npz.parent.name}/")
-            lm = compute_logit_metrics_pair(ref_npz, int_npz)
+            cfg = ref.get("config", {})
+            n_samples = int(cfg.get("n_samples", 0) or 0)
+            batch_size = int(cfg.get("batch_size", 0) or 0)
+            primary_batches = None
+            if n_samples > 0 and batch_size > 0:
+                primary_batches = (n_samples + batch_size - 1) // batch_size
+            lm = compute_logit_metrics_pair(
+                ref_npz, int_npz, max_batches=primary_batches
+            )
             if lm["per_problem_kl"].size > 0:
                 m_kl, lo_kl, hi_kl = bootstrap_ci_mean(lm["per_problem_kl"], n_resamples=10_000, seed=42)
                 m_js, lo_js, hi_js = bootstrap_ci_mean(lm["per_problem_js"], n_resamples=10_000, seed=42)
@@ -403,7 +462,11 @@ def aggregate_per_T(
                     "mse_mean": m_mse, "mse_ci": (lo_mse, hi_mse),
                     "n_problems": int(lm["per_problem_kl"].size),
                     "mean_matched_len": lm["mean_matched_len"],
+                    "mean_prefix_len": lm["mean_prefix_len"],
                     "divergence_rate": lm["divergence_rate"],
+                    "max_positions_seen": lm["max_positions_seen"],
+                    "retry_batches_ref_excluded": lm["n_retry_batches_ref_excluded"],
+                    "retry_batches_int_excluded": lm["n_retry_batches_int_excluded"],
                 }
 
         rows.append({
@@ -487,16 +550,17 @@ def write_results_md(rows: List[dict], out_path: Path) -> None:
     lines.append("two top-K supports. Under greedy free generation the two runs' sequences can")
     lines.append("diverge; once they pick different tokens the contexts differ and a positional")
     lines.append("comparison is meaningless. So the metric is computed **only over the matched")
-    lines.append("prefix** (positions up to and including the first token mismatch). `div_rate`")
+    lines.append("prefix** (the mismatch position is included in KL/JS but excluded from the")
+    lines.append("reported common-prefix length). `div_rate`")
     lines.append("is the fraction of sequences whose greedy path diverged within the window;")
-    lines.append("`match_len` is the mean number of aligned positions measured.")
+    lines.append("`prefix` is the mean number of positions strictly before mismatch or censoring.")
     lines.append("")
-    lines.append("| T | mean KL (nats) | KL 95% CI | mean JS | JS 95% CI | prob-MSE | div_rate | match_len |")
-    lines.append("|---|---:|:---:|---:|:---:|---:|---:|---:|")
+    lines.append("| T | mean KL (nats) | KL 95% CI | mean JS | JS 95% CI | prob-MSE | div_rate | prefix | window |")
+    lines.append("|---|---:|:---:|---:|:---:|---:|---:|---:|---:|")
     for r in rows:
         lm = r.get("logit_metrics")
         if lm is None:
-            lines.append(f"| {r['T']} | n/a | — | n/a | — | n/a | — | — |")
+            lines.append(f"| {r['T']} | n/a | — | n/a | — | n/a | — | — | — |")
             continue
         lines.append(
             f"| {r['T']} | "
@@ -504,7 +568,8 @@ def write_results_md(rows: List[dict], out_path: Path) -> None:
             f"{lm['js_mean']:.4f} | [{lm['js_ci'][0]:.4f}, {lm['js_ci'][1]:.4f}] | "
             f"{lm['mse_mean']:.2e} | "
             f"{lm.get('divergence_rate', float('nan')):.2f} | "
-            f"{lm.get('mean_matched_len', float('nan')):.1f} |"
+            f"{lm.get('mean_prefix_len', float('nan')):.1f} | "
+            f"{lm.get('max_positions_seen', 0)} |"
         )
     lines.append("")
     lines.append("## Reading the verdict")
@@ -512,11 +577,12 @@ def write_results_md(rows: List[dict], out_path: Path) -> None:
     lines.append("- **Table 2 (channel) cos≈1, rel L2≈const across T** → the 4-bit round-trip")
     lines.append("  preserves the inter-agent vector geometry, and the per-call distortion does")
     lines.append("  NOT grow with channel-traversal depth.")
-    lines.append("- **Table 3 matched-prefix KL is small** → where REF and INT4 share context the")
-    lines.append("  quantizer barely perturbs the next-token distribution (near-lossless per step).")
-    lines.append("- **KL does not explode with T** → no catastrophic depth-amplification of the")
-    lines.append("  per-step drift; `div_rate` quantifies how often a tiny perturbation flips a")
-    lines.append("  greedy token (a trajectory effect, separate from per-step fidelity).")
+    lines.append("- **Table 3 matched-prefix KL is approximate and selection-conditioned.** It")
+    lines.append("  measures only contexts shared before divergence and must not be read as a")
+    lines.append("  teacher-forced full-trajectory KL or as a reliable depth trend.")
+    lines.append("- **`div_rate` is windowed.** It quantifies whether a greedy token flips within")
+    lines.append("  the captured positions; output length and right-censoring must be considered")
+    lines.append("  when comparing systems or tasks.")
     lines.append("- **Table 1 TOST** needs adequate n to return EQUIVALENT within ±2pp; at small n")
     lines.append("  it will read INCONCLUSIVE/NOT_EQUIVALENT (wide CI), which is *underpowered*, not")
     lines.append("  evidence of harm. Use n≈250 for the formal equivalence claim.")

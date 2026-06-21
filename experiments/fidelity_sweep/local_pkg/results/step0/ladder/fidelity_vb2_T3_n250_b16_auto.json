@@ -1,0 +1,22 @@
+{
+  "config": {
+    "bits": 2,
+    "t": 3,
+    "n_samples": 250,
+    "batch_size": 16,
+    "dataset": "math500",
+    "dtype": "auto",
+    "capture": false,
+    "links": "all",
+    "config_tag": "vb2_T3_n250_b16_auto",
+    "seed": 42,
+    "decoding": "sampled"
+  },
+  "final_accuracy": 78.0,
+  "return_code": 0,
+  "run_seconds": 4179.1,
+  "n_per_problem": 0,
+  "n_per_problem_with_correct": 0,
+  "n_logit_batches": 0,
+  "call_stats_present": false
+}

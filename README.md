@@ -10,7 +10,28 @@ Quantizing the inter-agent latent communication channel of [RecursiveMAS](https:
 
 Measured on math500, n=250, seed=42, **sampled** decoding, Kaggle T4 with `--dtype float32`. We do not detect an accuracy degradation for bit-rates {2, 4, 8} relative to the 75.2% baseline (two-proportion z-tests, all p > 0.4; 95% Wald intervals straddle zero); 2-bit reaches the same accuracy count as baseline (188/250) at 16× compression. ("No detected change" is not a proof of equality — see the caveat below.)
 
-> ⚠️ **Honest caveat (don't read this as unconditional "lossless").** Under **greedy** decoding, a stricter paired ±2pp equivalence test (TOST, n=250) is **inconclusive** (Δ=−2.0pp, not statistically significant), and the 4-bit perturbation changes the generated reasoning text in ~88% of problems (while preserving the answer). So the headline is a *sampled-decoding* statement. See [REPORT_07](docs/reports/07_fidelity_sweep_modal.md) for the full fidelity analysis.
+> ⚠️ **Honest caveat (don't read this as unconditional "lossless").** Under
+> **greedy** decoding, paired accuracy intervals still allow effects of a few points,
+> 4.4--10% of individual correctness outcomes change in the clean local cells, and
+> 51.2--92.8% of primary sequences diverge within a 128-position capture window.
+> The headline is an aggregate sampled-decoding statement, not bit-exact preservation.
+> See [REPORT_08](docs/reports/08_local_cross_cell_generalization.md).
+
+## Local cross-task and tier extension
+
+A third backend reproduced the experiment on an RTX 5070 Ti (native bf16) and
+extended it to four cells: Sequential-Light × {math500, MBPP+, MedQA} and
+Sequential-Scaled × MBPP+. In the three clean math/code cells, paired greedy
+accuracy deltas are small and non-significant, although 4.4--10% of individual
+correctness outcomes change. MedQA greedy is excluded from that summary because its
+weak unquantized REF develops a pathological first-option bias.
+
+The corrected local trajectory analysis excludes conditional answer-retry calls and
+is explicitly windowed to the first 128 decode positions. On the same MBPP+ task,
+windowed divergence is **92.8% for Sequential-Light and 51.2% for
+Sequential-Scaled**, at the same mean per-call channel cosine (0.9953). This is a
+strong tier-associated robustness result, not yet a causal claim that parameter
+count alone explains the difference. See [REPORT_08](docs/reports/08_local_cross_cell_generalization.md).
 
 The powered greedy T=3 run measured ~1,152 latent token-vectors per math500 problem (all-link); at a representative channel dimension d≈2048 this is an **information-theoretic** reduction from ~9.0 MiB (fp32) to ~1.1 MiB (4-bit) / ~0.56 MiB (2-bit) per problem (a potential saving; we measure fake-quantization fidelity, not wall-clock bandwidth).
 
@@ -34,6 +55,7 @@ The powered greedy T=3 run measured ~1,152 latent token-vectors per math500 prob
 | [docs/RESEARCH.md](docs/RESEARCH.md) | Master research design — hypotheses, method, current state |
 | [docs/reports/06_variant_b_in_loop_HEADLINE.md](docs/reports/06_variant_b_in_loop_HEADLINE.md) | The main accuracy finding (n=250) |
 | [docs/reports/07_fidelity_sweep_modal.md](docs/reports/07_fidelity_sweep_modal.md) | Tier 2 fidelity: channel + per-step KL vs depth, TOST |
+| [docs/reports/08_local_cross_cell_generalization.md](docs/reports/08_local_cross_cell_generalization.md) | Local cross-task/tier results + corrected trajectory analysis |
 | [docs/reports/05_hardware_root_cause.md](docs/reports/05_hardware_root_cause.md) | Why pre-Ampere GPUs collapse this pipeline |
 | [REPRODUCIBILITY.md](REPRODUCIBILITY.md) | End-to-end external reproduction: run, fetch, verify, analyze |
 | [experiments/README.md](experiments/README.md) | How to reproduce each result |
@@ -48,7 +70,7 @@ The main result (Variant B bit-rate ladder at n=250) requires Kaggle T4 GPU (fre
 # 1. Install Python deps
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt     # numpy, scipy, matplotlib, torch, pytest
-python -m pytest tests/             # 109 pass, 1 skip (skip needs external ref repo) — sanity check
+python -m pytest tests/             # current suite; reference-oracle tests may skip if absent
 
 # 2. Configure Kaggle CLI credentials
 #    (KAGGLE_USERNAME + KAGGLE_KEY env vars OR ~/.kaggle/kaggle.json)
@@ -96,6 +118,7 @@ and checksum verification, use [REPRODUCIBILITY.md](REPRODUCIBILITY.md).
 
 - **Kaggle Tesla T4 16GB (free)** — accuracy ladder (REPORT_06). Requires `--dtype float32` explicit (T4 lacks native bf16 → silent collapse with auto dtype).
 - **Modal A100 40GB (monthly free credit)** — baseline reproduction + the Tier 2 fidelity sweep (REPORT_07), fp32. The fidelity sweep is launched with `modal run experiments/fidelity_sweep/modal_pkg/fidelity_modal.py::sweep`.
+- **Local RTX 5070 Ti 16GB** — native-bf16 replication and four-cell task/tier extension (REPORT_08).
 
 ## License
 

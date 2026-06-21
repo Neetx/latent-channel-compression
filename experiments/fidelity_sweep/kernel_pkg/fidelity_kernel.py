@@ -311,23 +311,30 @@ def patch_inference_mas(
     src: str,
     *,
     batch_size: int,
+    dataset: str = "math500",
+    style: str = "sequential_light",
     head_code: str = VARIANT_B_HEAD,
     return_code: str = VARIANT_B_RETURN,
 ) -> "tuple[str, dict]":
     """Apply the inference_mas.py patches: batch_size pin + head injection +
     return-adapter replacement. Returns (patched_src, counts).
+
+    ``style`` + ``dataset`` select which ``(<style>, <dataset>)`` recommended-settings
+    line to pin the batch_size on (defaults reproduce the cloud sequential_light/math500
+    behaviour). The head injection and adapter wrapping are style/dataset-independent.
     """
     counts: dict = {}
 
-    # batch_size pin in the recommended-settings dict
+    # batch_size pin in the recommended-settings dict ((style, dataset)-scoped)
     src, n2 = re.subn(
-        r'\("sequential_light",\s*"math500"\):\s*\{[^}]*"batch_size":\s*\d+',
-        f'("sequential_light", "math500"): {{"seed": 42, "batch_size": {batch_size}',
+        r'\("' + re.escape(style) + r'",\s*"' + re.escape(dataset) + r'"\):\s*\{[^}]*"batch_size":\s*\d+',
+        f'("{style}", "{dataset}"): {{"seed": 42, "batch_size": {batch_size}',
         src,
         count=1,
     )
     if n2 != 1:
-        raise RuntimeError(f"inference_mas.py: batch_size anchor not found (got {n2})")
+        raise RuntimeError(
+            f"inference_mas.py: batch_size anchor for ('{style}','{dataset}') not found (got {n2})")
     counts["batch_size"] = n2
 
     # head injection right after the `from modeling import (...)` block

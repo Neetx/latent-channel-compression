@@ -1,0 +1,172 @@
+# REPORT 08 — Local cross-cell replication and tier-associated trajectory robustness
+
+**Date:** 2026-06-19 to 2026-06-21  
+**Hardware:** NVIDIA RTX 5070 Ti 16 GB (Blackwell, sm_120), native bf16  
+**Backend:** `experiments/fidelity_sweep/local_pkg/`  
+**Upstream:** RecursiveMAS commit `f95d512017fb713e9ac519248fbfd3d270dafd68`  
+**Protocol:** seed 42, `num_recursive_rounds=3`, Variant B on all inner and outer
+links; sampled bit-rate ladder plus paired greedy REF/INT4 capture  
+**Status:** four cells complete; Tier-2 analysis corrected to exclude conditional
+answer-retry calls
+
+---
+
+## TL;DR
+
+The original math500 / Sequential-Light result reproduces on a consumer Blackwell
+GPU in native bf16, and aggregate answer robustness extends to code and to the larger
+Sequential-Scaled constellation. Across the three clean math/code cells, sampled
+bit-rate ladders show no monotonic degradation from 8 to 2 bits, and paired greedy
+accuracy deltas are small and non-significant. Individual correctness outcomes still
+change in 4.4--10% of problems.
+
+The corrected top-K trajectory analysis finds a large same-task tier contrast on
+MBPP+: divergence within the first 128 captured positions is 92.8% for
+Sequential-Light and 51.2% for Sequential-Scaled, despite the same mean per-call
+channel cosine (0.9953). This is strong evidence that the scaled constellation is
+more trajectory-robust in this cell. It is **not yet a causal law of model capacity**:
+the tiers differ in models, tokenizers, adapters, hidden dimensions, generation
+lengths, and logit margins, and only one seed and one same-task tier contrast have
+been measured.
+
+MedQA exposes a separate methodological failure mode. Under greedy decoding the weak
+unquantized REF develops a strong first-option bias; INT4 acts like dither and raises
+accuracy by 15.2 pp. That comparison is not a clean compression effect and is reported
+through its sampled ladder instead.
+
+---
+
+## 1. Why run locally
+
+The local backend serves three purposes:
+
+1. reproduce the cloud math500 result on independent hardware and a different safe
+   precision path (native bf16 rather than forced fp32);
+2. test whether answer robustness generalizes beyond math500 to functional code and
+   multiple-choice medicine;
+3. remove the low-baseline floor effect by running the larger Sequential-Scaled tier
+   on MBPP+.
+
+The pipeline loads one agent at a time. Sequential-Scaled therefore fits 16 GB at
+small batch sizes: batch 4 for the sampled ladder and batch 1 for logit capture.
+
+## 2. Sampled bit-rate ladders
+
+All cells use `n=250`. Values are accuracy percentages for REF / 8 / 4 / 2 bits.
+
+| cell | REF | 8-bit | 4-bit | 2-bit | reading |
+|---|---:|---:|---:|---:|---|
+| math500 / light | 77.6 | 76.0 | 78.8 | 78.0 | flat around the local baseline |
+| mbppplus / light | 32.8 | 33.6 | 38.8 | 34.8 | no monotonic degradation; low-baseline floor |
+| mbppplus / scaled | 70.8 | 73.6 | 72.0 | 71.2 | flat at a high baseline |
+| medqa / light | 34.4 | 26.4 | 32.8 | 30.0 | scattered; no bit-rate dose response |
+
+These are sampled, unpaired single-seed runs. “No monotonic degradation” is the
+appropriate statement; the ladders do not by themselves establish equivalence.
+
+## 3. Paired greedy answer-level results
+
+| cell | REF | INT4 | delta pp (95% bootstrap CI) | losses/gains | churn | McNemar p |
+|---|---:|---:|:---:|:---:|---:|---:|
+| math500 / light | 76.8 | 78.8 | +2.0 [-2.0,+6.0] | 10/15 | 10.0% | 0.42 |
+| mbppplus / light | 36.4 | 36.4 | 0.0 [-4.0,+4.0] | 12/12 | 9.6% | 1.00 |
+| mbppplus / scaled | 74.4 | 72.4 | -2.0 [-4.8,+0.4] | 8/3 | 4.4% | 0.23 |
+| medqa / light | 21.2 | 36.4 | +15.2 [+8.8,+21.6] | 19/57 | 30.4% | <0.001 |
+
+For the three clean math/code cells, every delta CI straddles zero and every exact
+McNemar test is non-significant. The result is aggregate answer robustness with real
+per-problem churn, not bit-exact preservation and not formal equivalence at a
+pre-specified ±2 pp margin.
+
+### MedQA greedy confound
+
+The MedQA REF chooses option A 116/250 times (46.4%) and reaches only 21.2% accuracy.
+INT4 is more balanced and reaches 36.4%; sampled REF is also normal at 34.4%. Clean
+A/B/C/D parsing rules out an extraction bug. The +15.2 pp greedy result is therefore
+a first-option degeneration/dither interaction, not evidence that compression
+improves the channel. It also demonstrates that paired greedy analysis requires a
+well-behaved REF.
+
+## 4. Corrected Tier-2 trajectory analysis
+
+### 4.1 Correction to the first local analysis
+
+The capture hook records every call to `GenerationMixin.generate`. After the fixed
+primary solver generation, RecursiveMAS conditionally retries examples whose answer
+cannot be parsed. REF and INT4 can retry different examples, so those calls are not
+positionally pairable. The initial local analysis paired all captured calls, including
+retries. It also described the local capture as if it were a complete trajectory.
+
+The corrected analysis:
+
+- pairs exactly the first `ceil(250 / batch_size)` primary solver batches;
+- excludes 3--35 conditional retry batches per run;
+- reports divergence only within the local 128-position capture window;
+- counts common-prefix positions strictly before the first mismatch;
+- uses top-K=256 locally, not the cloud K=512;
+- subtracts approximated missing-union-token mass from the residual tail bucket to
+  avoid double-counting.
+
+### 4.2 Results
+
+| cell | divergence within 128 | common prefix | matched-prefix KL (95% CI) | JS | channel cosine |
+|---|:---:|:---:|:---:|:---:|:---:|
+| math500 / light | 86.4% | 53.7 | 0.079 [0.043,0.124] | 0.009 | 0.9952 |
+| mbppplus / light | 92.8% | 35.8 | 0.113 [0.078,0.156] | 0.015 | 0.9953 |
+| **mbppplus / scaled** | **51.2%** | **65.7** | **0.059 [0.031,0.092]** | **0.003** | 0.9953 |
+| medqa / light | 96.4% | 32.4 | 0.045 [0.030,0.062] | 0.005 | 0.9952 |
+
+The divergence contrast on MBPP+ is too large to be explained by the few excluded
+retry calls. The channel cosine is almost identical, but cosine is only an average
+geometric distortion measure; it does not establish that the perturbations are
+equivalent relative to the two systems' token-decision boundaries.
+
+Matched-prefix KL is less robust than divergence. It is a top-K approximation,
+conditions on trajectories that have not yet diverged, averages over variable-length
+prefixes, and includes the mismatch position in the distributional calculation. It
+supports the same qualitative tier contrast on MBPP+, but it is not the basis for a
+depth or causal-capacity claim.
+
+### 4.3 Defensible interpretation
+
+The current evidence supports:
+
+> On MBPP+ at seed 42, Sequential-Scaled is substantially less likely than
+> Sequential-Light to diverge within the first 128 greedy decode positions under
+> the same 4-bit quantizer and nearly identical mean channel cosine.
+
+It does not yet support:
+
+- “trajectory preservation scales with parameter count” as a general law;
+- “48.8% of full generations never diverge” (the observations are right-censored);
+- a mechanism based on task redundancy, which MBPP+ answer robustness already
+  failed to confirm;
+- a clean teacher-forced per-position KL or a reliable KL-vs-depth trend.
+
+## 5. Reproducibility
+
+The public artifacts contain compact per-problem correctness records, small result
+JSONs, analysis scripts, and summaries. Full logit NPZs and verbose model outputs are
+not committed; they contain large captured outputs and are regenerated by the local
+runner. All repository paths are derived from the script location, and no machine
+username or credential is stored.
+
+Key files:
+
+- `experiments/fidelity_sweep/local_pkg/fidelity_local.py`
+- `experiments/fidelity_sweep/local_pkg/run_cell.py`
+- `experiments/fidelity_sweep/local_pkg/analysis/compare_cells.py`
+- `experiments/fidelity_sweep/local_pkg/analysis/tier2_logit_fidelity.py`
+- `experiments/fidelity_sweep/local_pkg/results/`
+
+## 6. Next experiments implied by this report
+
+1. Complete the tier contrast with Sequential-Scaled × math500.
+2. Repeat MBPP+ light/scaled at 3--5 seeds and pool paired discordances.
+3. Compute output-length distributions and a per-token first-divergence hazard with
+   right-censoring.
+4. Test whether REF top-1/top-2 logit margins explain the light/scaled contrast.
+5. Implement teacher-forced position-aligned logit capture for stable KL and link
+   localization.
+6. Evaluate deliberation/tool-calling, where a changed intermediate action is itself
+   consequential.

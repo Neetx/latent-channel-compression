@@ -10,6 +10,13 @@ Short answer after remediation: **the local replication workflow is now much
 closer to external-researcher standard, but a full external package still needs
 public raw artifacts or a fresh cloud rerun**.
 
+> **2026-06-21 update.** A portable local backend, compact four-cell correctness
+> artifacts, REPORT_08, and a corrected primary-call/top-K analyzer are now public.
+> Raw logit NPZs are still intentionally absent, so answer analyses are reproducible
+> from the repository while Tier-2 numeric reproduction requires regenerated or
+> separately archived captures. The historical test count below is a dated audit
+> observation, not the current suite size.
+
 The repository has strong components: pinned local analysis dependencies,
 unit-tested patching/analysis code, Kaggle and Modal runners, and detailed
 reports. However, the end-to-end replication path is not yet packaged as a

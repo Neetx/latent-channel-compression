@@ -108,6 +108,8 @@ experiments/variant_b_ladder_t4_kaggle/analysis/results/figures/bit_rate_ladder_
 
 This is the paired REF-vs-INT4 Modal/Kaggle experiment used for channel fidelity,
 trajectory divergence, matched-prefix logit metrics, and paired bootstrap/TOST.
+The current analyzer pairs only fixed primary generate calls and excludes conditional
+answer retries. It also corrects residual-tail accounting on the top-K union.
 
 ### 3.1 Modal A100 Path
 
@@ -162,7 +164,30 @@ done
 Then download each kernel into one subdirectory and run the same verifier and
 `analyze.py` command as above.
 
-## 4. Regenerate Figures and Write-Up
+## 4. Local Single-GPU Cross-Cell Extension
+
+The portable local backend is documented in
+[`experiments/fidelity_sweep/local_pkg/README.md`](experiments/fidelity_sweep/local_pkg/README.md).
+It produced four n=250 cells in bf16 on one 16 GB GPU. From the `local_pkg` directory:
+
+```bash
+bash run_step0.sh
+bash run_step1_mbppplus.sh
+bash run_step2_scaled_mbppplus.sh
+python run_cell.py --style sequential_light --dataset medqa \
+  --ladder-batch 16 --cap-batch 2 --n 250
+
+python analysis/flip_churn_tost.py
+python analysis/compare_cells.py
+python analysis/tier2_logit_fidelity.py
+```
+
+Set `LCC_RUN_ROOT` to choose the raw-output directory and `HF_HOME` to choose the
+checkpoint cache. Raw prompts, traces, logs, and `fidelity_logits.npz` are not part
+of the public repository. Compact JSONL records under `local_pkg/results/` are enough
+to reproduce paired answer statistics; Tier-2 requires regenerated or archived NPZs.
+
+## 5. Regenerate Figures and Write-Up
 
 After running the analyses:
 
@@ -178,7 +203,7 @@ tectonic main.tex
 headline ladder when present. If that file is absent, it falls back to the
 historical report values and says so in the generated title.
 
-## 5. Known Reproducibility Boundaries
+## 6. Known Reproducibility Boundaries
 
 - Cloud credentials and private Modal/Kaggle volumes are not included.
 - Raw historical cloud outputs are not committed; rerun the jobs or use an
@@ -188,5 +213,10 @@ historical report values and says so in the generated title.
   runners should be kept on that commit for strict reruns.
 - The headline ladder uses sampled decoding and unpaired runs. The fidelity
   sweep uses greedy decoding and paired runs. Do not merge those baselines.
+- Local Tier-2 captures use top-K=256 and a 128-position window. Divergence is
+  windowed and matched-prefix KL is approximate and selection-conditioned.
+- REPORT_07 cloud KL/divergence values were produced by the legacy all-call/tail
+  estimator. Reanalyze the raw cloud NPZs with the current analyzer before comparing
+  them numerically with the corrected local table.
 - Fake quantization measures information-theoretic channel compression, not
   wall-clock network bandwidth or latency.

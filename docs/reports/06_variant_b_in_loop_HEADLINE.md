@@ -1,5 +1,10 @@
 # REPORT 06 — Phase 0.I + 0.J: Variant B bit-rate ladder on working pipeline (Kaggle T4 fp32)
 
+> **Current interpretation (2026-06-21).** "Lossless" in the historical tables means
+> no detected aggregate accuracy reduction in that run; it does not mean bit-exact
+> outputs or proven statistical equivalence. Corrected local trajectory and cross-cell
+> evidence is reported in [REPORT_08](08_local_cross_cell_generalization.md).
+
 **Date:** 2026-05-31 (Phase 0.I, n=50) + 2026-06-01 (Phase 0.J, n=250)
 **Phase:**
   - 0.I — exploration ladder at n=50 to scope the bit-rate vs accuracy curve
@@ -166,8 +171,8 @@ This is the canonical truth table after the Phase 0.I + 0.J results (n=250 numbe
 | 0.I VB=4 (n=50) | T4 sm_75 | float32 | 50 | 4 | 4 | 80.0% | −4pp (within noise, n=50) |
 | 0.I VB=2 (n=50) | T4 sm_75 | float32 | 50 | 4 | 2 | 74.0% | −10pp (border significant, n=50) |
 | **0.J baseline (n=250)** | T4 sm_75 | float32 | 250 | 4 | — | **75.2%** | True baseline (n=50 was lucky subset) |
-| **0.J VB=8 (n=250)** | T4 sm_75 | float32 | 250 | 4 | 8 | **78.4%** | +3.2pp, p>0.4 — **LOSSLESS** ✓ |
-| **0.J VB=4 (n=250)** | T4 sm_75 | float32 | 250 | 4 | 4 | **76.8%** | +1.6pp, p>0.5 — **LOSSLESS** ✓ |
+| **0.J VB=8 (n=250)** | T4 sm_75 | float32 | 250 | 4 | 8 | **78.4%** | +3.2pp, p>0.4 — no detected loss |
+| **0.J VB=4 (n=250)** | T4 sm_75 | float32 | 250 | 4 | 4 | **76.8%** | +1.6pp, p>0.5 — no detected loss |
 | **0.J VB=2 (n=250)** | T4 sm_75 | float32 | 250 | 4 | 2 | **75.2%** | 0.0pp — **IDENTICAL TO BASELINE** ✓ |
 
 ---

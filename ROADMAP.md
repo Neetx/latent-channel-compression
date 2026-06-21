@@ -1,126 +1,117 @@
 # Roadmap
 
-Where this research goes next. The current result is a **narrow but clean
-measurement**: TurboQuant's MSE-optimal core compresses the inter-agent latent
-channel of **RecursiveMAS `sequential_light` on `math500`** by 4×–16× with no
-detected accuracy change under sampled decoding, while being *answer-preserving
-but not trajectory-preserving* under greedy decoding.
+## Current result (2026-06-21)
 
-The roadmap below turns that into a general, mechanistically-understood result. It
-separates **work that needs no GPU** (doable now) from **work that needs compute**
-(queued for when budget returns).
+Variant B, the data-oblivious TurboQuant MSE core used in this repository,
+compresses RecursiveMAS latent messages by 4x-16x with no detected monotonic
+accuracy degradation in the four completed local cells. The strongest supported
+description is:
 
-## Guiding question
+> Aggregate answer accuracy is robust at the tested sample sizes, while individual
+> answers and greedy token trajectories can change substantially.
 
-The most novel thread is the *answer-preserving ≠ trajectory-preserving* finding.
-The research question worth chasing:
+This is deliberately narrower than "lossless" or "trajectory preserving". The
+paired accuracy confidence intervals still allow effects of a few percentage points,
+and 5-30% of individual answers change depending on the cell.
 
-> **Why** does the final answer survive while ~88% of trajectories change — and
-> **when does that break?**
+### Completed local matrix
 
-Working hypothesis: answer-preservation holds because `math500` has a low-dimensional,
-redundant target (a boxed number). On tasks where the **trajectory is the output**
-(code generation) or where intermediate **tool calls** matter, the same trajectory
-drift may *not* be harmless. This is the test that separates a benchmark artifact
-from a general property.
+All runs used seed 42, three recursive rounds, native bf16 on one RTX 5070 Ti,
+and the upstream RecursiveMAS checkout pinned at `f95d512`.
 
----
+| cell | sampled REF/INT4 | greedy REF/INT4 | paired delta (95% CI) | answer churn |
+|---|---:|---:|---:|---:|
+| math500 / light | 77.6 / 78.8 | 76.8 / 78.8 | +2.0 pp [-2.0,+6.0] | 10.0% |
+| mbppplus / light | 32.8 / 32.8 | 36.4 / 36.4 | 0.0 pp [-4.0,+4.0] | 9.6% |
+| mbppplus / scaled | 70.8 / 72.0 | 74.4 / 72.4 | -2.0 pp [-4.8,+0.4] | 4.4% |
+| medqa / light | 34.4 / 32.8 | 21.2 / 36.4 | +15.2 pp [+8.8,+21.6] | 30.4% |
 
-## Priority 1 — Generality across RecursiveMAS architectures × benchmarks
+The MedQA greedy comparison is not evidence that quantization improves medicine:
+the REF run develops a pathological first-option bias that sampled decoding does
+not show. Use the flat sampled ladder as the primary MedQA evidence.
 
-We measured one cell of RecursiveMAS's released matrix. The next step is to fill it.
+### Corrected Tier-2 trajectory result
 
-**RecursiveMAS released styles × benchmarks** (from upstream
-`RELEASE_RECOMMENDED_SETTINGS`):
+The public analyzer pairs only the fixed primary generate calls and excludes
+condition-dependent answer-retry calls. Local captures use top-K=256 and a
+128-position observation window. The KL estimate expands the union support without
+double-counting union-token mass in the residual tail.
 
-| Style (tier) | math500 (math) | medqa (medicine) | gpqa (science) | mbppplus (code) |
-|---|:---:|:---:|:---:|:---:|
-| `sequential_light` (~1–2B agents) | ✅ done | ☐ | ☐ | ☐ |
-| `sequential_scaled` (Gemma3-4B + Qwen3, larger) | ☐ | ☐ | ☐ | ☐ |
+| cell | diverged within window | mean common prefix / 128 | matched-prefix KL (nats) | channel cosine |
+|---|---:|---:|---:|---:|
+| math500 / light | 86.4% | 53.7 | 0.079 | 0.9952 |
+| mbppplus / light | 92.8% | 35.8 | 0.113 | 0.9953 |
+| mbppplus / scaled | 51.2% | 65.7 | 0.059 | 0.9953 |
+| medqa / light | 96.4% | 32.4 | 0.045 | 0.9952 |
 
-That is **8 cells; 1 done.** Run the same compression study (bit-rate ladder + the
-greedy paired fidelity analysis) on every cell.
+The same-task MBPP comparison is the cleanest observation: the scaled tier is much
+more trajectory-robust than the light tier under nearly identical measured channel
+cosine. This is a tier association, not yet a causal capacity law: architecture,
+checkpoint family, baseline competence, output length, and token margins also change.
+Matched-prefix KL is approximate and selection-conditioned; teacher forcing is needed
+for a position-aligned causal measurement.
 
-**Why each axis matters:**
+Canonical details and artifact provenance are in
+[`docs/reports/08_local_cross_cell_generalization.md`](docs/reports/08_local_cross_cell_generalization.md).
 
-- **`mbppplus` (code) is the key test of the guiding question.** For code, the
-  generated tokens *are* the answer — answer-preservation and trajectory-preservation
-  collapse into one. If compression hurts here but not on `math500`, that confirms
-  the redundant-target hypothesis.
-- **`medqa` / `gpqa`** check whether the result holds for non-math reasoning.
-- **`sequential_scaled`** checks whether larger agents (with higher-dimensional
-  channels) are more or less compressible than the light tier.
+## Priorities
 
-**Other topologies** RecursiveMAS implements — `mixture` (math/code/science +
-summarizer), `distillation` (expert/learner), `deliberation` (reflector/toolcaller)
-— are present in the upstream code but we did not find released checkpoints. Add
-them **if/when weights are published**. `deliberation` is especially interesting:
-its tool-caller is exactly a setting where trajectory drift could change behavior.
+### 1. Replicate the tier contrast
 
-**Compute note:** `sequential_light` fits an A100-40GB (and a T4 in fp32).
-`sequential_scaled` needs an A100-80GB or H100. Always force `--dtype float32` on
-pre-Ampere GPUs (see REPORT_05).
+Run at least three seeds for both MBPP cells and add `scaled x math500`. Report
+hierarchical or cluster-bootstrap intervals across seeds, not eight isolated p-values.
+This decides whether the 92.8% vs 51.2% gap is stable and whether it follows tier
+rather than task.
 
----
+### 2. Replace matched-prefix KL with teacher-forced fidelity
 
-## Now — progress without any GPU
+Force both conditions along the REF token sequence and record per-position KL/JS,
+top-1 margin, rank changes, and hidden-state norm. This removes the post-divergence
+selection problem and can localize where perturbations are amplified or absorbed.
 
-These are doable today, from existing artifacts and code, and each one *unblocks or
-sharpens* a queued experiment.
+### 3. Map the rate-distortion frontier
 
-1. **Per-problem "flip churn" analysis** (existing greedy n=250 data). Net accuracy
-   is −2.0 pp, but how many problems flip REF-correct→INT4-wrong vs the reverse? The
-   net can hide a much larger churn. This directly quantifies *behavioral*
-   perturbation beyond net accuracy — the core of the guiding question.
-2. **Divergence vs. difficulty / length.** Does the divergence rate or matched-prefix
-   length correlate with `math500` level or generated length? Tests whether
-   harder/longer problems are more perturbed.
-3. **Teacher-forced per-step fidelity (design + code + tests).** Our matched-prefix
-   KL is confounded by trajectory divergence and is unstable. Forcing INT4 to decode
-   REF's token sequence gives a position-aligned per-step KL. Build and unit-test the
-   analyzer now (on synthetic captures); run it on real captures later. This is the
-   cleanest fix for the depth-amplification and localization questions.
-4. **Implement the QJL inner-product residual** in `src/` (+ tests vs the reference).
-   We currently evaluate only the MSE core. QJL is the obvious reviewer question and
-   may rescue the 2-bit rate; have it ready to ablate.
-5. **Power / design analysis for the greedy equivalence.** Honest constraint:
-   `math500` caps at n=500 and the observed Δ sits on the ±2 pp margin, so a
-   single-benchmark ±2 pp equivalence test may stay inconclusive. Decide now whether
-   to (a) reframe as effect estimation ("a small ~2 pp effect, quantified") or
-   (b) pool seeds/benchmarks for n > 500.
-6. **Strengthen Related Work** with verified KV-cache-quantization and latent-comms
-   citations, and **archive the raw cloud artifacts** to a citable store (the
-   reproducibility audit's top remaining gap).
+Repeat paired captures at 2, 3, 4, 6, and 8 bits and include an unrotated uniform
+baseline. Add the QJL inner-product residual as a separate ablation. The paper
+currently establishes robustness at selected rates, not the full frontier nor the
+contribution of each algorithmic component.
 
----
+### 4. Expand architecture and task coverage
 
-## Next — cheap compute first (when budget returns)
+Prioritize `deliberation` because tool-caller decisions make trajectory drift
+operationally meaningful. Then test mixture/distillation where memory permits. Add a
+high-baseline multiple-choice task to replace the confounded light-MedQA cell; GPQA
+remains gated by dataset access.
 
-7. **Seed robustness:** 3–5 seeds × 4-bit at n=250 on `math500`. Kills the
-   single-seed limitation cheaply.
-8. **Powered greedy equivalence / effect estimate:** full n=500 (+ pooling per the
-   Now-#5 decision).
-9. **Run the teacher-forced capture** and feed the Now-#3 analyzer → resolves
-   depth-amplification and inner/outer localization with a clean metric.
+### 5. Measure system value
 
----
+Report encoded bytes, quantize/dequantize latency, wall-clock overhead, peak VRAM,
+and end-to-end communication savings. The present 4x-16x figures are nominal payload
+compression ratios and do not yet include metadata or compute overhead.
 
-## Later — higher cost / higher impact
+### 6. Strengthen inference
 
-10. **QJL ablation**, especially at 2-bit and on `mbppplus`.
-11. **Localization with power**, or a **mixed bit-rate** scheme (high bits on the
-    256 outer links, low on the inner) once localization is resolved.
-12. **Wall-clock packed transport** in a distributed setup — turns the
-    information-theoretic ~9.0 → ~1.1 MiB/problem figure into a measured saving.
-13. **`sequential_scaled` tier** and, if checkpoints appear, the **mixture /
-    distillation / deliberation** topologies.
+Pre-register the primary estimand and equivalence margin; use multiple seeds; report
+paired effect estimates and uncertainty; correct secondary multiple comparisons; and
+separate confirmatory from exploratory analyses. Keep MedQA's greedy pathology as a
+methodological failure case, not a headline result.
 
----
+## Working configuration
 
-## What "done" looks like
+| tier | sampled ladder batch | greedy capture batch |
+|---|---:|---:|
+| light (~1.5B) | 16 | 2 |
+| scaled (~4B) | 4 | 1 |
 
-With Priority 1 (the 8-cell matrix) plus the Now/Next analyses, this becomes a solid
-empirical study with a real scientific hook: *a data-oblivious quantizer compresses
-the inter-agent latent channel of a recursive multi-agent system across architectures
-and benchmarks, preserving answers but not trajectories — with the gap widening
-exactly where the trajectory is the output.*
+Use `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` for scaled, `--dtype auto`
+on Ampere-or-newer GPUs, seed 42, T=3, and the portable `local_pkg` drivers. Batch 8
+on the 16 GB card thrashes the CUDA allocator; the pipeline otherwise loads one agent
+at a time. Raw logits remain local and are regenerated from the documented commands.
+
+## Publication threshold
+
+Before claiming a general capacity effect, require: (1) replicated seeds, (2) a
+second same-task light/scaled comparison, (3) teacher-forced aligned fidelity, and
+(4) a model/tier description that does not confound size with architecture. Until
+then, the publishable claim is a robust cross-cell dissociation between aggregate
+answer accuracy and individual trajectory identity, plus an exploratory tier contrast.

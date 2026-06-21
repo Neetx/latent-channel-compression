@@ -1,0 +1,19 @@
+cell                  REF   INT4    Δpp          Δ 95%CI     b/c  churn%  McNemar     loss-frac (95% CI)
+--------------------------------------------------------------------------------------------------------------
+math500  / light    76.8%  78.8%  +2.0 [-2.0,+6.0]  10/15   10.0   p=0.42   0.40 [0.21,0.61]
+mbppplus / light    36.4%  36.4%  +0.0 [-4.0,+4.0]  12/12    9.6   p=1.00   0.50 [0.29,0.71]
+mbppplus / scaled   74.4%  72.4%  -2.0 [-4.8,+0.4]   8/3     4.4   p=0.23   0.73 [0.39,0.94]
+medqa    / light    21.2%  36.4% +15.2 [+8.8,+21.6]  19/57   30.4   p=0.00   0.25 [0.16,0.36]
+
+Reading:
+- math500 / mbppplus (light + scaled): every Δ 95% CI straddles 0 and every
+  McNemar is non-significant — no significant accuracy effect, no significant
+  loss/gain asymmetry. Single seed, 11-25 discordants: the per-cell directions
+  (+2 / 0 / -2) are within noise. The faint scaled -2pp needs power to resolve.
+- medqa is the LONE significant cell (Δ=+15pp, p<0.001) but is CONFOUNDED: under
+  greedy the unquantized REF develops a strong 'A'-bias (picks A ~46% vs ~25%
+  expected) and scores 21.2%, while the quantizer's dither breaks the bias (36.4%).
+  The +15pp is a greedy-decoding pathology of the REF, NOT a channel-fidelity
+  result. medqa must be read via its (flat) sampled ladder; its greedy paired
+  comparison is not a clean answer-preservation measure. See
+  results/step3_light_medqa/SUMMARY.md.

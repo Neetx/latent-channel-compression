@@ -1,0 +1,16 @@
+REF  = per_problem_medqa_vb0_T3_n250_b2_auto.jsonl
+INT4 = per_problem_medqa_vb4_T3_n250_b2_auto.jsonl
+paired n=250   REF acc=21.20%   INT4 acc=36.40%   Î”=+15.20 pp
+
+2x2 contingency:
+  both correct=34  REFâœ“/INT4âœ—(loss)=19  REFâœ—/INT4âœ“(gain)=57  both wrong=140
+
+FLIP-CHURN:
+  flipped=76 (30.4% of problems)  losses=19 gains=57 net=+38
+  churn (76) = 2.0x the net change (38)
+
+Paired bootstrap (B=20000, seed=42):
+  Î”=+15.20 pp  95% CI [+8.80,+21.60]  90% CI [+9.60,+20.80]
+  TOST @Â±2pp: DIFFERENT
+
+McNemar exact: discordant=76 (b=19, c=57)  two-sided p=0.000

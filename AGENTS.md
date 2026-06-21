@@ -5,9 +5,26 @@ Read this first. For deeper context follow the links to `docs/`.
 
 ## What this project is
 
-Research codebase that applies **TurboQuant Variant B** (Haar rotation + Lloyd-Max-Gaussian per-coordinate quantizer) to the **RecursiveMAS Sequential-Light inter-agent latent channel** and measures the downstream effect on math500 accuracy.
+Research codebase that applies **TurboQuant Variant B** (Haar rotation +
+Lloyd-Max-Gaussian per-coordinate quantizer) to RecursiveMAS latent channels and
+measures channel distortion, generated-trajectory drift, and downstream accuracy
+across Sequential-Light/Scaled and math, code, and medical-QA tasks.
 
-**Main finding (n=250):** Variant B compresses the inter-agent latent channel **4× to 16× with no measurable accuracy change under SAMPLED decoding** — all bit-rates {2, 4, 8} indistinguishable from baseline (two-proportion z-tests, all p > 0.4; 2-bit gives 188/250 each). ⚠️ Under **greedy** decoding, a stricter paired ±2pp equivalence test (TOST) at 4-bit is **INCONCLUSIVE** (Δ=−2.0pp, not significant) — so "drop-in lossless" is a *sampled-decoding* statement, not an unconditional one. See [docs/reports/06](docs/reports/06_variant_b_in_loop_HEADLINE.md) (sampled) + [07](docs/reports/07_fidelity_sweep_modal.md) (greedy/fidelity).
+**Canonical cloud finding (n=250):** Variant B compresses the
+Sequential-Light/math500 channel **4× to 16× with no detected accuracy change under
+sampled decoding**. Under greedy decoding, a stricter paired ±2 pp equivalence test
+at 4-bit is **INCONCLUSIVE** (Δ=−2.0 pp, not significant), while the trajectory
+changes in most captured sequences. See reports [06](docs/reports/06_variant_b_in_loop_HEADLINE.md)
+and [07](docs/reports/07_fidelity_sweep_modal.md).
+
+**Latest local extension (2026-06-21):** four cells are complete on a 16 GB Blackwell
+GPU: light×{math500, MBPP+, MedQA} and scaled×MBPP+. The three clean math/code cells
+show small, non-significant aggregate accuracy deltas with 4.4--10% correctness churn.
+On MBPP+, corrected primary-solver-only Tier-2 analysis finds divergence within the
+first 128 positions of **92.8% (light) vs 51.2% (scaled)** at the same mean channel
+cosine (0.9953). Treat this as a strong tier association, **not yet a causal model-
+capacity law**. MedQA greedy is confounded by a pathological first-option bias in REF.
+See [report 08](docs/reports/08_local_cross_cell_generalization.md).
 
 ## Repository layout
 
@@ -23,7 +40,7 @@ Research codebase that applies **TurboQuant Variant B** (Haar rotation + Lloyd-M
 ├── docs/                    ← ALL documentation lives here (no .md sprinkled around)
 │   ├── README.md            ← documentation index
 │   ├── RESEARCH.md          ← master research design — read after headline
-│   ├── reports/             ← 7 numbered reports (01 oldest, 06 headline, 07 fidelity)
+│   ├── reports/             ← 8 numbered reports (06 headline, 07 cloud fidelity, 08 local generalization)
 │   ├── design/              ← architectural plans
 │   ├── operations/          ← experiments log + external reproducibility audit
 │   └── figures/             ← matplotlib PNG + the script that regenerates them
@@ -36,19 +53,19 @@ Research codebase that applies **TurboQuant Variant B** (Haar rotation + Lloyd-M
 │   │   ├── logit_metrics.py       ← MSE, KL, JS at egress
 │   │   └── bootstrap.py           ← paired bootstrap + TOST equivalence
 │   └── utils/lloyd_max.py
-├── tests/                   ← 102 tests pass, 1 skipped (needs external ref repo)
+├── tests/                   ← unit/integration tests; run pytest for the current count
 └── experiments/             ← only 4 active folders — historical clutter archived
     ├── distortion_validation/        ← per-link rMSE validation (write-up §4.1)
     ├── solver_diagnostic/            ← Solver-alone math500 sanity (83%)
     ├── baseline_a100_modal/          ← Modal A100 baseline reproduction
     ├── variant_b_ladder_t4_kaggle/   ← main accuracy experiment — n=250 bit-rate ladder
-    └── fidelity_sweep/               ← Tier 2 — paired REF vs INT4 fidelity (kernel_pkg=Kaggle, modal_pkg=Modal A100; shared tested patch fns)
+    └── fidelity_sweep/               ← paired fidelity; Kaggle, Modal, and local single-GPU backends share tested patch functions
 ```
 
 ## Build / test / run
 
 ```bash
-# Run all tests (must stay green; 102 pass, 1 skip is expected)
+# Run all tests (must stay green; the TurboQuant reference module may skip if absent)
 .venv/bin/python -m pytest tests/
 
 # Validate the fidelity sweep's risky logic WITHOUT a GPU: the kernel's regex
@@ -82,12 +99,20 @@ modal run experiments/fidelity_sweep/modal_pkg/fidelity_modal.py --bits 4 --t 3 
     --inputs <dir_with_downloaded_kernel_outputs> \
     --logit-dir <dir_with_per_kernel_NPZ_subdirs> \
     --out experiments/fidelity_sweep/analysis/results
+
+# Local single-GPU backend (native bf16 on Ampere+; see local_pkg/README.md)
+.venv/bin/python experiments/fidelity_sweep/local_pkg/run_cell.py \
+    --style sequential_light --dataset math500 --n 250 \
+    --ladder-batch 16 --cap-batch 2
 ```
 
 ## Key invariants (DO NOT VIOLATE)
 
 1. **No secrets in tree.** `.kaggle/`, `.mcp.json`, `.env`, `*.env` are gitignored AND must not exist in the working tree. The previous cleanup removed a real Kaggle API token (`KGAT_…`) — never re-introduce it.
-2. **No personal info (this repo is published publicly).** No author email, no real Kaggle/Modal username, no `/Users/<name>/…` absolute paths. Username placeholder is `<YOUR_KAGGLE_USERNAME>`. Modal commands use the volume/app names only (no account identifier). Scrub any captured logs before committing.
+2. **No personal or machine-specific info (this repo is public).** The publication
+   author name `Antonio Pastorelli` is explicitly approved; do not add an email,
+   account username, home-directory path, or local cache path. Kaggle uses
+   `<YOUR_KAGGLE_USERNAME>`. Scrub captured logs before committing.
 3. **`external/` is gitignored.** Don't commit the upstream RecursiveMAS clone — agents must `git clone` it themselves.
 4. **All scripts must be reproducible from a single command.** Helper scripts use `$PROJECT_ROOT` resolution, not absolute paths. Test it from a clean checkout.
 5. **No edits to model or quantizer logic when adding measurement.** The fidelity sweep is **instrumentation only** — `src/quantizers/turboquant_honest.py` and the recursive pipeline are not modified. See `docs/reports/05_hardware_root_cause.md` §6 and `docs/reports/06_variant_b_in_loop_HEADLINE.md` for the methodology contract.
@@ -111,20 +136,22 @@ Full details in [docs/reports/05_hardware_root_cause.md](docs/reports/05_hardwar
 - ✓ Hardware/dtype advisory documented + figure generated (report 05 §15)
 - ✓ Bit-rate ladder at n=250 on Kaggle T4 fp32 — no measurable accuracy change 4×-16× under sampled decoding (report 06; greedy nuance in report 07)
 
-**Active (in progress):**
-- 🟢 **Fidelity sweep (Tier 2) done on Modal A100 fp32** (n=50 T-sweep + powered n=250 T=3 + REF-vs-REF control + selective inner/outer; ~$10). See [docs/reports/07_fidelity_sweep_modal.md](docs/reports/07_fidelity_sweep_modal.md). **Findings:** per-call channel cos 0.9954 (depth-independent *by construction* — a consistency check, not a depth result); per-step matched-prefix KL small but its estimator is unstable (no reliable depth trend); **n=250 greedy TOST INCONCLUSIVE (Δ=−2.0pp, not significant)**; REF-vs-REF control = 0 (pipeline deterministic → the trajectory change is the quantizer; the −2pp accuracy is within noise); selective inner/outer localization **not resolved**. Two backends share the same tested patch functions: Kaggle `kernel_pkg/fidelity_kernel.py` (free, weekly quota) and Modal `modal_pkg/fidelity_modal.py` (A100 fp32, primary). The Modal `sweep` entrypoint fans out all 8 runs concurrently; `analyze.py` finds each NPZ next to its JSON. Paired REF (bits=0) vs INT4 (bits=4) instrumentation at T ∈ {1, 2, 3, 4}. Captures:
-  - Per-call channel cosine + relative L2 + effective rank (via `QuantStats.record=True` in `src/adapters/patch.py`)
-  - Per-position MSE / KL(p_REF ‖ p_INT) / JS at egress (via monkey-patch of `transformers.GenerationMixin.generate` to force `output_scores=True` and capture top-K=512 logits)
-  - Per-problem correctness array (via upstream's `--result_jsonl`, injected as a `run.py` patch). **Sequential-Light runs `num_rollouts=1` → FLAT JSONL schema** (`correct` at top level); the parser handles flat + nested and is unit-tested.
-  - **Paired bootstrap Δacc + TOST equivalence test** (ε=2pp, α=0.05) — formal EQUIVALENT / NOT_EQUIVALENT / INCONCLUSIVE verdict per T
-  - Kernel cost: 8 kernels (4 T × 2 conditions) × ~95 min on T4 fp32 b=4 ≈ 13h free Kaggle quota
-  - Analysis: `experiments/fidelity_sweep/analysis/analyze.py` consumes downloaded JSONs + NPZs and emits `results.md` + 6 figures
-  - **Validation done with zero GPU:** the 9 surgical patches are tested against the real cloned upstream (substitution counts + `compile()`), and the JSONL parser + analysis aggregation are tested on synthetic data (`tests/test_fidelity_kernel.py`, `tests/test_fidelity_analyze.py`). Two correctness traps are covered by tests: (a) the driver must propagate `VARIANT_B_BITS`/`CAPTURE_MODE`/`TOPK_LOGITS`/`MAX_LOGIT_POSITIONS` into the subprocess env or injection+capture silently no-op; (b) the FLAT-schema parser, or every problem reads `correct=None` → false EQUIVALENT.
-- ⏳ Gating step before spending the ~13h budget: a 1-kernel dry-run (`./bin/push_fidelity_kernel.sh 0 1 10 2`, ~30 min). `output_scores=True` raises peak GPU memory — drop to `batch_size=2` if a kernel OOMs.
+**Active / latest:**
+- ✓ Modal Tier-2 cloud sweep complete: T∈{1,2,3,4}, powered n=250 T=3,
+  REF-vs-REF control, and selective inner/outer runs (report 07).
+- ✓ Local backend and four-cell extension complete (report 08). Raw logit NPZs remain
+  local; compact correctness artifacts and summaries are public.
+- ⚠️ Tier-2 pairing must exclude conditional answer-retry calls. `analyze.py` now
+  accepts/derives a primary-batch limit; local captures are K=256, window=128.
+- ⚠️ Matched-prefix KL is a top-K, selection-conditioned approximation. Do not infer
+  a reliable depth trend or causal capacity mechanism from it.
+- ⏳ Next: scaled×math500, multi-seed MBPP+ light/scaled, divergence hazard/length
+  analysis, logit-margin mediation, and teacher-forced position-aligned KL.
 
-**Open (post-Tier 2):**
-- ⌛ n=500 higher-confidence numbers on Modal A100 fp32 (~$6, ~2h)
-- ⌛ Write-up in [writeup/](writeup/) (kept measured; no venue framing)
+**Open (post-Tier 2/local extension):**
+- ⌛ multi-seed effect estimation and the remaining light/scaled matrix cells
+- ⌛ right-censored first-divergence analysis and teacher-forced KL
+- ⌛ QJL residual ablation and packed-transport systems measurement
 
 ## Where each thing is documented
 
@@ -138,6 +165,7 @@ Full details in [docs/reports/05_hardware_root_cause.md](docs/reports/05_hardwar
 | External reproduction workflow | [REPRODUCIBILITY.md](REPRODUCIBILITY.md) + [audit](docs/operations/external_reproducibility_audit.md) |
 | Inventory of every kernel ever pushed | [docs/operations/experiments_log.md](docs/operations/experiments_log.md) |
 | Tier 2 fidelity-sweep methodology | [experiments/fidelity_sweep/README.md](experiments/fidelity_sweep/README.md) |
+| Local cross-task/tier results and corrected trajectory analysis | [docs/reports/08](docs/reports/08_local_cross_cell_generalization.md) |
 
 ## Don'ts
 

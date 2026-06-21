@@ -1,0 +1,22 @@
+{
+  "config": {
+    "bits": 0,
+    "t": 3,
+    "n_samples": 250,
+    "batch_size": 2,
+    "dataset": "medqa",
+    "dtype": "auto",
+    "capture": true,
+    "links": "all",
+    "config_tag": "medqa_vb0_T3_n250_b2_auto",
+    "seed": 42,
+    "decoding": "greedy"
+  },
+  "final_accuracy": 21.2,
+  "return_code": 0,
+  "run_seconds": 11045.8,
+  "n_per_problem": 250,
+  "n_per_problem_with_correct": 250,
+  "n_logit_batches": 158,
+  "call_stats_present": true
+}

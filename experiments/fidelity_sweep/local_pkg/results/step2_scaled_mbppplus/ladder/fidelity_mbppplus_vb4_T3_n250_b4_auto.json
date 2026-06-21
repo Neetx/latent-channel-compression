@@ -1,0 +1,22 @@
+{
+  "config": {
+    "bits": 4,
+    "t": 3,
+    "n_samples": 250,
+    "batch_size": 4,
+    "dataset": "mbppplus",
+    "dtype": "auto",
+    "capture": false,
+    "links": "all",
+    "config_tag": "mbppplus_vb4_T3_n250_b4_auto",
+    "seed": 42,
+    "decoding": "sampled"
+  },
+  "final_accuracy": 72.0,
+  "return_code": 0,
+  "run_seconds": 4315.0,
+  "n_per_problem": 0,
+  "n_per_problem_with_correct": 0,
+  "n_logit_batches": 0,
+  "call_stats_present": false
+}

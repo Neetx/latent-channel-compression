@@ -219,12 +219,28 @@ guard; missing `scipy` in `debian_slim`.
 
 ---
 
+## Local cross-cell extension — RTX 5070 Ti bf16 (2026-06-19 to 2026-06-21)
+
+The portable `experiments/fidelity_sweep/local_pkg/` backend completed four n=250,
+seed-42, T=3 cells: light x {math500, MBPP+, MedQA} and scaled x MBPP+.
+Sampled ladders are non-monotonic with no detected rate-dependent decline. The three
+clean paired-greedy math/code deltas are +2.0, 0.0, and -2.0 pp with 4.4--10.0%
+answer churn. MedQA greedy is confounded by a REF first-option bias.
+
+Corrected Tier-2 analysis pairs only primary calls, excludes conditional retries,
+uses local top-K=256 and a 128-position window, and corrects residual-tail mass.
+Windowed divergence is 86.4% math/light, 92.8% MBPP+/light, 51.2% MBPP+/scaled,
+and 96.4% MedQA/light. See [REPORT_08](../reports/08_local_cross_cell_generalization.md).
+
+Raw NPZs and verbose logs remain outside git. Public JSONL artifacts are minimized
+to fields needed for paired answer analysis.
+
+---
+
 ## What we have NOT done yet (open work)
 
 Open work (larger systems, more seeds, a QJL-residual ablation, teacher-forced per-step fidelity) is summarized in the write-up's Discussion and Limitations.
 
-Briefly:
-- n=250 confirmation at baseline + VB=4 (free on Kaggle T4)
-- bf16/fp32 ablation on A100 to formally close the Phase 0.F dtype-cast hypothesis (when Modal refreshes)
-- n=500 higher-confidence numbers (Modal A100 fp32, ~$3)
-- Paper draft
+Briefly: multi-seed light/scaled replication, scaled Math500, teacher-forced
+position-aligned fidelity, QJL residual ablation, additional topologies/tasks, and
+real packed-transport latency/byte measurements.

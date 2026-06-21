@@ -1,0 +1,14 @@
+REF  = per_problem_mbppplus_vb0_T3_n250_b2_auto.jsonl
+INT4 = per_problem_mbppplus_vb4_T3_n250_b2_auto.jsonl
+paired n=250   REF acc=36.40%   INT4 acc=36.40%   Î”=+0.00 pp
+
+2x2 contingency:
+  both correct=79  REFâœ“/INT4âœ—(loss)=12  REFâœ—/INT4âœ“(gain)=12  both wrong=147
+
+FLIP-CHURN:
+  flipped=24 (9.6% of problems)  losses=12 gains=12 net=+0
+Paired bootstrap (B=20000, seed=42):
+  Î”=+0.00 pp  95% CI [-4.00,+4.00]  90% CI [-3.20,+3.20]
+  TOST @Â±2pp: INCONCLUSIVE
+
+McNemar exact: discordant=24 (b=12, c=12)  two-sided p=1.000

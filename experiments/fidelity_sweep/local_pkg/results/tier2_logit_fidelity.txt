@@ -1,0 +1,16 @@
+Corrected primary-solver-only Tier-2 analysis (n=250 per cell, top-K=256, window<=128)
+
+cell                 divergence   prefix       KL nats (95% CI)      JS  channel cosine
+-----------------------------------------------------------------------------------------
+math500 / light           86.4%     53.7   0.079 [0.043,0.124]   0.009       0.9952
+  primary batches=125; excluded retry batches REF=11 INT4=10
+mbppplus / light          92.8%     35.8   0.113 [0.078,0.156]   0.015       0.9953
+  primary batches=125; excluded retry batches REF=3 INT4=3
+mbppplus / scaled         51.2%     65.7   0.059 [0.031,0.092]   0.003       0.9953
+  primary batches=250; excluded retry batches REF=4 INT4=4
+medqa / light             96.4%     32.4   0.045 [0.030,0.062]   0.005       0.9952
+  primary batches=125; excluded retry batches REF=33 INT4=35
+
+Prefix counts positions strictly before the first mismatch. Divergence is measured
+only within the captured window. KL/JS use the corrected union-top-K + residual-tail
+approximation and are matched-prefix, not teacher-forced, estimates.

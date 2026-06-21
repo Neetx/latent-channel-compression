@@ -140,6 +140,18 @@ class TestDistOverUnion:
         assert p.sum() == pytest.approx(1.0)
         assert p[2] > 0.0  # boundary prob, NOT zero (avoids the -inf blow-up)
 
+    def test_missing_union_token_is_not_double_counted_in_tail(self, az):
+        vals = np.array([2.0, 1.0])
+        idxs = np.array([1, 2])
+        union = np.array([1, 2, 3])
+        full_lse = float(np.log(np.exp(2.0) + 2 * np.exp(1.0)))
+        tail_log = 1.0  # the only tail token has logit 1
+        p = az.dist_over_union(
+            vals, idxs, full_lse, union, tail_log=tail_log
+        )
+        assert p.sum() == pytest.approx(1.0)
+        assert p[-1] == pytest.approx(0.0, abs=1e-9)
+
 
 class TestKLJSProbs:
     def test_zero_when_identical(self, az):
@@ -216,10 +228,43 @@ class TestComputeLogitMetricsPair:
         out = az.compute_logit_metrics_pair(ref, intq)
         assert out["divergence_rate"] == 1.0           # diverged
         assert out["mean_matched_len"] == 1.0          # only the t=0 mismatch counted
+        assert out["mean_prefix_len"] == 0.0           # zero tokens precede t=0
         kl = out["per_problem_kl"][0]
         assert kl > 0.5 and np.isfinite(kl)            # positive, finite
         assert kl < 50.0                                # NOT the old -inf/1e3 blow-up
         assert out["per_problem_mse"][0] > 0.0
+
+    def test_max_batches_excludes_conditional_retry_capture(self, az, tmp_path):
+        T, B, K = 2, 1, 2
+        vals = np.tile(np.array([3.0, 0.0]), (T, B, 1))
+        idxs = np.tile(np.array([10, 20]), (T, B, 1))
+        full_lse = np.full((T, B), 3.1)
+        tail_log = np.full((T, B), -2.0)
+        ref0, int0 = tmp_path / "ref0.npz", tmp_path / "int0.npz"
+        _save_logit_npz(ref0, vals, idxs, full_lse, tail_log)
+        _save_logit_npz(int0, vals, idxs, full_lse, tail_log)
+
+        def with_retry(src, dst, retry_idxs):
+            with np.load(src) as z:
+                payload = {k: z[k] for k in z.files}
+            payload.update({
+                "batch1_vals": vals.astype(np.float32),
+                "batch1_idxs": retry_idxs.astype(np.int32),
+                "batch1_full_lse": full_lse.astype(np.float64),
+                "batch1_tail_log": tail_log.astype(np.float64),
+                "n_batches": np.array(2),
+            })
+            np.savez_compressed(dst, **payload)
+
+        ref, intq = tmp_path / "ref.npz", tmp_path / "int.npz"
+        with_retry(ref0, ref, idxs)
+        with_retry(int0, intq, np.tile(np.array([20, 10]), (T, B, 1)))
+        all_calls = az.compute_logit_metrics_pair(ref, intq)
+        primary = az.compute_logit_metrics_pair(ref, intq, max_batches=1)
+        assert all_calls["divergence_rate"] == pytest.approx(0.5)
+        assert primary["divergence_rate"] == 0.0
+        assert primary["n_items"] == 1
+        assert primary["n_retry_batches_ref_excluded"] == 1
 
 
 # ---------------------------------------------------------------------------
