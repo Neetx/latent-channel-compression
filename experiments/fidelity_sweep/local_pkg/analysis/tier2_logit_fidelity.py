@@ -1,93 +1,128 @@
 #!/usr/bin/env python3
-"""Tier-2 logit-fidelity + trajectory analysis across the local cells (no GPU).
+"""Corrected Tier-2 trajectory analysis for locally generated NPZ captures.
 
-Reuses the tested `compute_logit_metrics_pair` from the cloud analyzer
-(`experiments/fidelity_sweep/analysis/analyze.py`) on the captured top-K logit NPZs
-(`fidelity_logits.npz`) of each greedy REF/INT4 pair. For every cell it reports:
-  - trajectory divergence rate within the captured window (fraction of primary
-    solver sequences whose top-1 token differs REF vs INT4),
-  - mean common-prefix length (positions strictly before the first mismatch),
-  - matched-prefix per-step KL / JS (nats) between the REF and INT4 next-token
-    distributions, over the union top-K support with a tail bucket,
-  - per-call channel cosine (Tier 1) from the INT4 run's fidelity_call_stats.json.
-
-Only the fixed primary solver batches are paired. Conditional answer-retry calls
-are excluded because REF and INT4 may retry different problems. This remains the
-matched-prefix variant (right-censored at the capture window and confounded by
-divergence itself); a clean teacher-forced version needs a fresh GPU capture.
+Pass the same ``LCC_RUN_ROOT`` used by ``run_cell.py``. Only fixed primary batches
+are paired; conditional answer-retry calls are excluded. The reported divergence is
+right-censored at the capture window and KL/JS are top-K matched-prefix estimates.
 """
 from __future__ import annotations
 
+import argparse
 import importlib.util
 import json
+import os
 from pathlib import Path
 
 import numpy as np
 
 REPO = Path(__file__).resolve().parents[4]
 ANALYZE = REPO / "experiments" / "fidelity_sweep" / "analysis" / "analyze.py"
-FID = Path.home() / "lcc" / "fid_out"
 
 
-def _run_dir(current: str, legacy: str | None = None) -> Path:
-    """Return the current output directory, falling back to a legacy tag."""
-    current_path = FID / current
-    if current_path.exists() or legacy is None:
-        return current_path
-    return FID / legacy
-
-spec = importlib.util.spec_from_file_location("analyze_cloud", str(ANALYZE))
-az = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(az)
-
-CELLS = [
-    ("math500 / light",   _run_dir("math500_vb0_T3_n250_b2_auto", "vb0_T3_n250_b2_auto"),
-                           _run_dir("math500_vb4_T3_n250_b2_auto", "vb4_T3_n250_b2_auto"), 2),
-    ("mbppplus / light",  FID / "mbppplus_vb0_T3_n250_b2_auto",  FID / "mbppplus_vb4_T3_n250_b2_auto", 2),
-    ("mbppplus / scaled", FID / "mbppplus_vb0_T3_n250_b1_auto",  FID / "mbppplus_vb4_T3_n250_b1_auto", 1),
-    ("medqa / light",     FID / "medqa_vb0_T3_n250_b2_auto",     FID / "medqa_vb4_T3_n250_b2_auto", 2),
-]
+def load_analyzer():
+    spec = importlib.util.spec_from_file_location("fidelity_analyze", str(ANALYZE))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
-def channel_cosine(callstats: Path):
+def run_dir(root: Path, style: str, dataset: str, bits: int, batch: int) -> Path:
+    """Resolve the canonical run_cell layout, with a legacy flat-root fallback."""
+    tag = f"{dataset}_vb{bits}_T3_n250_b{batch}_auto"
+    canonical = root / f"sequential_{style}_{dataset}" / tag
+    if canonical.exists():
+        return canonical
+    flat = root / tag
+    if flat.exists():
+        return flat
+    if dataset == "math500":
+        legacy = root / f"vb{bits}_T3_n250_b{batch}_auto"
+        if legacy.exists():
+            return legacy
+    return canonical
+
+
+def channel_cosine(callstats: Path) -> float | None:
     try:
-        d = json.loads(callstats.read_text())
-        cos = [s["cosine"]["mean"] for s in d.get("per_adapter", [])
-               if isinstance(s.get("cosine"), dict) and "mean" in s["cosine"]]
-        return float(np.mean(cos)) if cos else None
+        data = json.loads(callstats.read_text())
+        cosines = [
+            stat["cosine"]["mean"] for stat in data.get("per_adapter", [])
+            if isinstance(stat.get("cosine"), dict) and "mean" in stat["cosine"]
+        ]
+        return float(np.mean(cosines)) if cosines else None
     except Exception:
         return None
 
 
-def ci95_mean(x, boot=10000, seed=42):
-    x = np.asarray(x, dtype=np.float64)
-    if x.size == 0:
-        return (float("nan"), float("nan"))
+def ci95_mean(values, boot: int = 10_000, seed: int = 42) -> tuple[float, float]:
+    values = np.asarray(values, dtype=np.float64)
+    if values.size == 0:
+        return float("nan"), float("nan")
     rng = np.random.default_rng(seed)
-    bm = x[rng.integers(0, x.size, size=(boot, x.size))].mean(axis=1)
-    return (float(np.percentile(bm, 2.5)), float(np.percentile(bm, 97.5)))
+    means = values[rng.integers(0, values.size, size=(boot, values.size))].mean(axis=1)
+    return float(np.percentile(means, 2.5)), float(np.percentile(means, 97.5))
 
 
-print(f"{'cell':18} {'div.rate':>8} {'prefix':>8} {'KL nats (95% CI)':>22} {'JS':>7} {'chan_cos':>9} {'n':>4} {'window':>6}")
-print("-" * 102)
-for label, refd, intd, batch_size in CELLS:
-    rnpz, inpz = refd / "fidelity_logits.npz", intd / "fidelity_logits.npz"
-    if not (rnpz.is_file() and inpz.is_file()):
-        print(f"{label:18}  (NPZ missing: {rnpz.is_file()=}, {inpz.is_file()=})")
-        continue
-    n_samples = 250
-    primary_batches = (n_samples + batch_size - 1) // batch_size
-    m = az.compute_logit_metrics_pair(rnpz, inpz, max_batches=primary_batches)
-    kl = m["per_problem_kl"]
-    klm = float(kl.mean()) if kl.size else float("nan")
-    lo, hi = ci95_mean(kl)
-    jsm = float(m["per_problem_js"].mean()) if m["per_problem_js"].size else float("nan")
-    cos = channel_cosine(intd / "fidelity_call_stats.json")
-    cos_s = f"{cos:.4f}" if cos is not None else "n/a"
-    print(f"{label:18} {m['divergence_rate']*100:7.1f}% {m['mean_prefix_len']:8.1f} "
-          f"{klm:7.3f} [{lo:.3f},{hi:.3f}] {jsm:7.3f} {cos_s:>9} "
-          f"{m['n_items']:4d} {m['max_positions_seen']:6d}")
-    print(
-        f"  primary batches={m['n_batches_paired']}; excluded retries "
-        f"REF={m['n_retry_batches_ref_excluded']} INT={m['n_retry_batches_int_excluded']}"
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--run-root",
+        default=os.environ.get("LCC_RUN_ROOT", str(Path.home() / "lcc" / "runs")),
+        help="root populated by run_cell.py (default: LCC_RUN_ROOT or ~/lcc/runs)",
     )
+    args = parser.parse_args()
+    root = Path(args.run_root)
+    analyzer = load_analyzer()
+
+    cells = [
+        ("math500 / light", "light", "math500", 2),
+        ("mbppplus / light", "light", "mbppplus", 2),
+        ("mbppplus / scaled", "scaled", "mbppplus", 1),
+        ("medqa / light", "light", "medqa", 2),
+    ]
+
+    print(f"run root: {root}")
+    print(f"{'cell':18} {'div.rate':>8} {'prefix':>8} {'KL nats (95% CI)':>22} "
+          f"{'JS':>7} {'chan_cos':>9} {'n':>4} {'window':>6}")
+    print("-" * 102)
+    missing = 0
+    for label, style, dataset, batch_size in cells:
+        refd = run_dir(root, style, dataset, 0, batch_size)
+        intd = run_dir(root, style, dataset, 4, batch_size)
+        rnpz, inpz = refd / "fidelity_logits.npz", intd / "fidelity_logits.npz"
+        if not (rnpz.is_file() and inpz.is_file()):
+            missing += 1
+            print(f"{label:18} MISSING ({rnpz} | {inpz})")
+            continue
+
+        primary_batches = (250 + batch_size - 1) // batch_size
+        metrics = analyzer.compute_logit_metrics_pair(
+            rnpz, inpz, max_batches=primary_batches
+        )
+        kl = metrics["per_problem_kl"]
+        kl_mean = float(kl.mean()) if kl.size else float("nan")
+        lo, hi = ci95_mean(kl)
+        js = metrics["per_problem_js"]
+        js_mean = float(js.mean()) if js.size else float("nan")
+        cosine = channel_cosine(intd / "fidelity_call_stats.json")
+        cosine_text = f"{cosine:.4f}" if cosine is not None else "n/a"
+        print(
+            f"{label:18} {metrics['divergence_rate']*100:7.1f}% "
+            f"{metrics['mean_prefix_len']:8.1f} {kl_mean:7.3f} [{lo:.3f},{hi:.3f}] "
+            f"{js_mean:7.3f} {cosine_text:>9} {metrics['n_items']:4d} "
+            f"{metrics['max_positions_seen']:6d}"
+        )
+        print(
+            f"  primary batches={metrics['n_batches_paired']}; excluded retries "
+            f"REF={metrics['n_retry_batches_ref_excluded']} "
+            f"INT4={metrics['n_retry_batches_int_excluded']}"
+        )
+
+    if missing:
+        print(f"\n{missing} cell(s) missing raw NPZ captures. Run those cells first.")
+        return 2
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

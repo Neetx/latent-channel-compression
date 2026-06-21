@@ -5,7 +5,8 @@
 math500 (test, n=250). Quantizer = Variant B (TurboQuant MSE core, no QJL), injected
 at **all** links (inner + outer). Runs: 2026-06-06 → 2026-06-19.
 
-Reproduce: `bash ../../run_step0.sh` then `python ../../analysis/flip_churn_tost.py`.
+Reproduce with the canonical `run_cell.py` workflow in the root
+`REPRODUCIBILITY.md`; `run_step0.sh` is retained only as a compatibility wrapper.
 
 ## Phase 1 — sampled bit-rate ladder (n=250, batch=16, `--no-capture`)
 
@@ -47,8 +48,8 @@ McNemar exact: discordant=25, two-sided p=0.424 (net not distinguishable from 0)
 
 **Reading.** The flat net accuracy hides a 5×-larger behavioural churn: **10% of final
 answers change** under 4-bit compression (beyond the 88% trajectory change reported in
-REPORT_07), yet aggregate accuracy is unmoved. *Answer-preserving in aggregate, with
-real per-problem churn underneath.*
+REPORT_07), yet the net accuracy estimate is small. *Aggregate accuracy robustness
+with real per-problem churn underneath.*
 
 > Caveat surfaced while inspecting examples: the upstream math500 grader can mark
 > multi-value answers correct loosely (e.g. accepted `−1, 2` for gold `1, −2`), so a few

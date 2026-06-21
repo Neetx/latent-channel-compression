@@ -41,7 +41,7 @@ The pipeline faithfully reproduces the upstream baseline, as it did on math500.
 ## Result — the guiding hypothesis is NOT confirmed
 
 Prediction: compression should **break on code**, because there the trajectory *is* the
-answer. It does not. mbppplus behaves **like math500**: answer-preserving in aggregate
+answer. The predicted aggregate decline is not detected. mbppplus behaves **like math500**: aggregate accuracy is robust
 (Δ≈0, even cleaner than math500's +2.0), not trajectory-preserving (~10% of answers
 flip — essentially the same 9.6% vs 10%). The robustness is therefore **more general**
 than the "redundant low-dimensional target" hypothesis predicted.
@@ -66,5 +66,5 @@ than the "redundant low-dimensional target" hypothesis predicted.
   pipeline is deterministic, so the 24 flips are attributed to the quantizer.
 - Single seed, n=250 (of 378), one system.
 
-Raw Tier-2 logits (`fidelity_logits.npz`, ~25 MB/run) not committed; in
-`~/lcc/fid_out/mbppplus_vb{0,4}_T3_n250_b2_auto/`. Per-run timing in the `*.log` files.
+Raw Tier-2 logits are not committed. Regenerate them with the canonical local workflow
+in the root `REPRODUCIBILITY.md`.

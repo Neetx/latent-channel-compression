@@ -5,10 +5,11 @@ Variant B at all links. **Scaled batch recipe (hard-won):** ladder `batch=4`, ca
 `batch=1`, `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`. (`batch=8` hit the 16 GB
 ceiling on long 4000-token generations and **thrashed the CUDA allocator → ~50× slowdown
 / effective hang**; batch=4 peaks ~11 GB and runs clean.) Full run ~9.5 h.
-Reproduce: `python ../../run_step2_scaled_mbppplus.py --ladder-batch 4 --cap-batch 1 --n 250`.
+Reproduce with `run_cell.py --style sequential_scaled --dataset mbppplus
+--ladder-batch 4 --cap-batch 1 --n 250`; see the root `REPRODUCIBILITY.md`.
 
 ## Purpose
-Step 1 (mbppplus / light) was answer-preserving like math500, but the light tier has a
+Step 1 (mbppplus / light) showed aggregate robustness like math500, but the light tier has a
 **floor effect** (baseline ~33%, 147/250 wrong under both) → little room for compression
 to *break* a correct answer. Scaled has a **high baseline (~74%)** → this is the powered
 test of the guiding hypothesis ("compression breaks on code when the system is capable").
@@ -37,8 +38,9 @@ split **8 losses / 3 gains**. From `analysis/compare_cells.py` (all three cells)
 
 ## Result (honest, rigorous)
 
-1. **No accuracy cost, anywhere.** Every sampled ladder is flat; every greedy Δ 95% CI
-   straddles 0. Compression is answer-preserving across math/code and light/scaled.
+1. **No statistically resolved accuracy cost in the clean cells.** Every sampled
+   ladder is non-monotonic; every clean greedy delta 95% CI straddles 0. Effects of a
+   few percentage points remain compatible with the data.
 2. **No significant churn asymmetry, anywhere.** The scaled 8:3 split *looks* like
    "compression breaks more than it fixes", but its loss-fraction CI is **[0.39, 0.94]**
    — it **straddles 0.50**, so it is **not distinguishable from balanced**. With single
@@ -56,4 +58,4 @@ split **8 losses / 3 gains**. From `analysis/compare_cells.py` (all three cells)
 **Calibration:** REF sampled 70.8% / greedy 74.4% — the high baseline we needed (vs
 light's ~33%), confirming scaled is the capable-system regime.
 
-Raw Tier-2 logits not committed (~25 MB/run) — in `~/lcc/fid_out/mbppplus_vb{0,4}_T3_n250_b1_auto/`.
+Raw Tier-2 logits are not committed; regenerate them with the canonical local workflow.

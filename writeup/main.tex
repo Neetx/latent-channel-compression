@@ -25,11 +25,10 @@ Latent-space multi-agent systems exchange dense activation vectors rather than
 text. We study whether these messages can be quantized aggressively without
 materially changing system behavior. We insert the data-oblivious, mean-squared
 error (MSE) core of TurboQuant into every latent link of the released RecursiveMAS
-system, without changing model weights or prompts. A canonical Math500 run shows
-no detected sampled-accuracy degradation from 8 to 2 bits per coordinate
-($4\times$--$16\times$ nominal payload compression, $n=250$). We then extend the
-study locally to four task/tier cells: Math500, MBPP+, and MedQA with the light
-tier, plus MBPP+ with the scaled tier. None of the four sampled ladders exhibits a
+system, without changing model weights or prompts. Our primary study runs locally
+on one RTX 5070 Ti and covers four task/tier cells: Math500, MBPP+, and MedQA with
+the light tier, plus MBPP+ with the scaled tier. None of the four sampled ladders
+from 8 to 2 bits per coordinate ($4\times$--$16\times$ nominal compression) exhibits a
 monotonic rate--accuracy decline. In the three non-confounded paired-greedy cells,
 accuracy differences are $+2$, $0$, and $-2$ percentage points with confidence
 intervals spanning zero, while 4.4--10.0\% of individual answers change. Corrected
@@ -40,7 +39,8 @@ divergence; matched-prefix KL 0.059 versus 0.113 nats), despite nearly identical
 measured channel cosine. This is an exploratory tier association, not yet a causal
 model-capacity law. Our evidence supports aggregate answer robustness under
 aggressive fake quantization, but not bit-exact losslessness, trajectory
-preservation, or a deployable bandwidth claim.
+preservation, or a deployable bandwidth claim. An earlier independent Kaggle T4
+Math500 ladder shows the same aggregate pattern under fp32.
 \end{abstract}
 
 \section{Introduction}
@@ -70,10 +70,10 @@ Our contributions are:
 \begin{itemize}
   \item an instrumentation-only implementation that quantizes all RecursiveMAS
   latent links while preserving the released models and evaluation pipeline;
-  \item a sampled bit-rate ladder showing no detected Math500 accuracy degradation
-  at $4\times$--$16\times$ nominal payload compression;
-  \item a four-cell local extension across math, code, medicine, and light/scaled
+  \item a primary four-cell local study across math, code, medicine, and light/scaled
   tiers, with paired answer churn rather than net accuracy alone;
+  \item sampled bit-rate ladders with no detected monotonic aggregate-accuracy
+  degradation at $4\times$--$16\times$ nominal payload compression;
   \item a corrected top-$K$ trajectory analysis that excludes conditional retry
   calls and avoids double-counting probability mass in the residual tail;
   \item an exploratory same-task result in which the scaled MBPP+ system is much
@@ -92,6 +92,9 @@ RecursiveMAS connects heterogeneous language-model agents through learned adapte
 and iterates latent messages across planning, solving, and critique stages. We pin
 the upstream source at commit \texttt{f95d512}. The completed matrix uses
 \texttt{sequential\_light} and one \texttt{sequential\_scaled} contrast.
+The upstream checkout is treated as read-only: the runner verifies its commit,
+creates a disposable source copy in the run directory, and instruments only that
+copy.
 
 \paragraph{Quantizer.}
 For $x\in\mathbb{R}^d$, \method normalizes $x$, applies a fixed Haar-random
@@ -114,14 +117,16 @@ Metadata, rotation cost, and codec overhead are therefore outside the stated rat
 
 \subsection{Conditions}
 
-The cloud study uses Kaggle T4 fp32 for the sampled Math500 ladder and Modal A100
-fp32 for paired fidelity. The local extension uses one RTX 5070 Ti 16 GB under
-WSL2, native bf16, seed 42, three recursive rounds, and $n=250$ in every cell.
-The local matrix contains:
+The primary study uses one RTX 5070 Ti 16 GB under WSL2, native bf16, seed 42,
+three recursive rounds, and $n=250$ in every cell. The matrix contains:
 \begin{itemize}
   \item \texttt{sequential\_light} on Math500, MBPP+, and MedQA;
   \item \texttt{sequential\_scaled} on MBPP+.
 \end{itemize}
+
+Earlier independent runs used Kaggle T4 fp32 for a sampled Math500 ladder and Modal
+A100 fp32 for controls and a depth sweep. They corroborate the broad Math500 result
+and expose dtype hazards, but are not the primary reproduction target.
 
 Sampled ladders use the released sampling configuration at bits
 $\{0,8,4,2\}$. Paired fidelity uses greedy decoding for REF ($b=0$) and INT4
@@ -175,37 +180,6 @@ bits & synthetic ($d=2048$) & real adapter ($d=1536$) & reported rate \\
 \end{tabular}
 \end{table}
 
-\subsection{Canonical Math500 sampled ladder}
-
-The fp32 T4 ladder at $n=250$ is flat within its uncertainty
-(Table~\ref{tab:cloud-ladder}, Figure~\ref{fig:ladder}). At 2 bits, REF and the
-quantized system both solve 188/250 problems. These unpaired stochastic runs support
-``no detected degradation,'' not exact equality.
-
-\begin{table}[t]
-\centering
-\caption{Canonical Math500 sampled ladder (T4 fp32, $n=250$).}
-\label{tab:cloud-ladder}
-\begin{tabular}{lccc}
-\toprule
-bits & nominal compression & accuracy & delta versus REF \\
-\midrule
-REF & $1\times$ & 75.2\% & --- \\
-8 & $4\times$ & 78.4\% & +3.2 pp \\
-4 & $8\times$ & 76.8\% & +1.6 pp \\
-2 & $16\times$ & 75.2\% & 0.0 pp \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\begin{figure}[t]
-\centering
-\includegraphics[width=0.58\linewidth]{figures/bit_rate_ladder_n250.png}
-\caption{Canonical Math500 sampled accuracy versus bit rate. Error bars overlap;
-the experiment detects no monotonic degradation.}
-\label{fig:ladder}
-\end{figure}
-
 \subsection{Four-cell local answer behavior}
 
 Table~\ref{tab:local-answer} extends the accuracy observation across tasks and one
@@ -237,6 +211,38 @@ whereas the sampled REF has no comparable bias. INT4 dither disrupts the bias an
 appears to improve accuracy. Because the reference condition is pathological, this
 row cannot estimate channel fidelity; the non-monotonic sampled ladder is the valid
 task-level observation.
+
+\subsection{Independent cloud Math500 corroboration}
+
+An earlier fp32 T4 ladder at $n=250$ is flat within its uncertainty
+(Table~\ref{tab:cloud-ladder}, Figure~\ref{fig:ladder}). At 2 bits, REF and the
+quantized system both solve 188/250 problems. These unpaired stochastic runs support
+``no detected degradation,'' not exact equality, and provide an independent
+hardware/dtype corroboration of the local Math500 pattern.
+
+\begin{table}[t]
+\centering
+\caption{Independent historical Math500 sampled ladder (T4 fp32, $n=250$).}
+\label{tab:cloud-ladder}
+\begin{tabular}{lccc}
+\toprule
+bits & nominal compression & accuracy & delta versus REF \\
+\midrule
+REF & $1\times$ & 75.2\% & --- \\
+8 & $4\times$ & 78.4\% & +3.2 pp \\
+4 & $8\times$ & 76.8\% & +1.6 pp \\
+2 & $16\times$ & 75.2\% & 0.0 pp \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.58\linewidth]{figures/bit_rate_ladder_n250.png}
+\caption{Independent T4 Math500 sampled accuracy versus bit rate. Error bars overlap;
+the experiment detects no monotonic degradation.}
+\label{fig:ladder}
+\end{figure}
 
 \subsection{Corrected trajectory fidelity}
 

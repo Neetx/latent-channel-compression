@@ -1,15 +1,21 @@
-# Local environment for running the test suite and the offline analysis
-# (experiments/fidelity_sweep/analysis/analyze.py + docs/figures regeneration).
-#
-# The CLOUD experiment images pin their own dependencies separately and do NOT
-# use this file — see experiments/fidelity_sweep/modal_pkg/fidelity_modal.py
-# (Modal image) and experiments/fidelity_sweep/kernel_pkg/fidelity_kernel.py
-# (Kaggle install step). Those pin torch==2.4.1+cu121, transformers==5.3.0, etc.
-#
-# Python >= 3.10. Versions below are the ones this repo was tested with; relax
-# to >= if exact wheels are unavailable for your platform.
+# Tested local RTX 5070 Ti / WSL2 runtime and offline analysis environment.
+# Python 3.12. The exact CUDA build used for the published local runs was
+# torch 2.9.0+cu128; install that wheel first from the PyTorch cu128 index, then
+# install this file. See REPRODUCIBILITY.md.
+torch==2.9.0
+transformers==5.3.0
+datasets==4.4.2
+huggingface-hub==1.7.1
+tokenizers==0.22.2
+safetensors==0.7.0
+sentencepiece==0.2.1
+accelerate==1.12.0
+tqdm==4.67.1
 numpy==2.2.6
 scipy==1.15.3
 matplotlib==3.10.9
-torch==2.12.0
+PyYAML==6.0.3
+requests==2.32.5
+packaging==26.0
+filelock==3.20.3
 pytest==9.0.3

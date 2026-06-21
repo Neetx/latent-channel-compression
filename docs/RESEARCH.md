@@ -1,7 +1,7 @@
 # Research specification and current evidence
 
-**Status (2026-06-21):** cloud validation complete; four-cell local extension
-complete; causal and teacher-forced follow-ups open.
+**Status (2026-06-21):** primary four-cell RTX 5070 Ti study complete; independent
+cloud validation complete; causal and teacher-forced follow-ups open.
 
 ## Research question
 
@@ -92,9 +92,9 @@ planned replacement for causal per-position conclusions.
 
 ### Hardware and dtype
 
-- Canonical cloud ladder: Kaggle T4 in fp32.
-- Cloud fidelity: Modal A100 in fp32.
-- Local extension: RTX 5070 Ti 16 GB in native bf16 under WSL2.
+- Primary study: RTX 5070 Ti 16 GB in native bf16 under WSL2.
+- Independent historical ladder: Kaggle T4 in fp32.
+- Independent historical controls/depth sweep: Modal A100 in fp32.
 - Pre-Ampere bf16/autocast runs are invalid for this recursive pipeline; REPORT_05
   documents the hardware precision collapse.
 

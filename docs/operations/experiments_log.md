@@ -157,13 +157,15 @@ All Phase 0.B experiments share the same fatal confound: **Kaggle P100 lacks nat
 - **Setup:** n=250, seed=42, sampled, num_recursive_rounds=3, latent_length=48, num_rollouts=1
 - **Kernel slugs (4 runs):**
   - `rmas-phase0j-baseline-n250-b4` — **75.2%** (188/250) — true baseline
-  - `rmas-phase0j-8-n250-b4` — **78.4%** (196/250) — +3.2pp, p>0.4 (lossless)
-  - `rmas-phase0j-vb4-n250-b4` — **76.8%** (192/250) — +1.6pp, p>0.5 (lossless)
+  - `rmas-phase0j-8-n250-b4` — **78.4%** (196/250) — +3.2pp, p>0.4 (no detected loss)
+  - `rmas-phase0j-vb4-n250-b4` — **76.8%** (192/250) — +1.6pp, p>0.5 (no detected loss)
   - `rmas-phase0j-vb2-n250-b4` — **75.2%** (188/250) — 0.0pp (identical to baseline!)
 - **(Earlier crashed attempts at b=8:** `rmas-phase0j-vb4-n250-b8` and `rmas-phase0j-vb2-n250-b8` — both OOMed at b=8 fp32 on T4 16GB. Dropped to b=4 for the working runs.)
 - **Cited in:** REPORT_06 §2.1 (canonical bit-rate table), RESEARCH.md §12.5.C (headline finding)
 
-**Headline:** TurboQuant Variant B compresses the RecursiveMAS Sequential-Light inter-agent latent channel **4× to 16× with no measurable accuracy change under sampled decoding**. All n=250 sampled measurements are statistically indistinguishable from baseline (two-proportion z-tests, all p > 0.4); 2-bit = baseline problem-for-problem. (Greedy ±2pp TOST is inconclusive — see REPORT_07; "drop-in lossless" is a sampled-decoding statement.)
+**Historical cloud headline:** TurboQuant Variant B showed no detected sampled-accuracy
+change at 4x--16x in this Math500 run. This is not exact equivalence or bit-exact
+preservation; the primary cross-cell result is now REPORT_08.
 
 ---
 
@@ -219,7 +221,7 @@ guard; missing `scipy` in `debian_slim`.
 
 ---
 
-## Local cross-cell extension — RTX 5070 Ti bf16 (2026-06-19 to 2026-06-21)
+## Primary local cross-cell study — RTX 5070 Ti bf16 (2026-06-19 to 2026-06-21)
 
 The portable `experiments/fidelity_sweep/local_pkg/` backend completed four n=250,
 seed-42, T=3 cells: light x {math500, MBPP+, MedQA} and scaled x MBPP+.

@@ -13,7 +13,8 @@
 **Comparator:** upstream `inference_utils.answer_utils.compare_answers("math500")`
 **Raw artifacts:** [`experiments/variant_b_ladder_t4_kaggle/`](../../experiments/variant_b_ladder_t4_kaggle/) (kernels `rmas-phase0i-vb{2,4,6,8}` for n=50, `rmas-phase0j-{baseline,8,4,2}-n250-b4` for n=250)
 **Predecessors:** [REPORT_05.md](./05_hardware_root_cause.md) (root cause of accuracy gap), [RESEARCH.md §12.5](../RESEARCH.md)
-**Status:** **Main result confirmed at n=250 — no detected accuracy change across 4× to 16× under sampled decoding (answer-preserving, not trajectory-preserving; see REPORT_07).**
+**Status:** **Historical cloud validation at n=250 — no detected sampled-accuracy
+change across 4x to 16x. The primary cross-cell result is REPORT_08.**
 
 ---
 

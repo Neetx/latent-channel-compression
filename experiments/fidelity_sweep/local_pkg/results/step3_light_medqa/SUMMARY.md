@@ -61,4 +61,4 @@ already breaks the bias; only **greedy** REF degenerates.
 **Sampled ladders are flat in every cell.** The greedy paired probe is clean and ≈0 where
 the REF greedy is well-behaved (math/code), and medqa is the cell that shows when it is not.
 
-Raw Tier-2 logits not committed (~25 MB/run) — in `~/lcc/fid_out/medqa_vb{0,4}_T3_n250_b2_auto/`.
+Raw Tier-2 logits are not committed; regenerate them with the canonical local workflow.

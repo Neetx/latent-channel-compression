@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """Local single-GPU backend for the fidelity_sweep experiment.
 
-Sibling of ``kernel_pkg`` (Kaggle T4) and ``modal_pkg`` (Modal A100). It runs on
-a local CUDA GPU where the upstream RecursiveMAS is ALREADY cloned at
-``external/RecursiveMAS`` (pinned commit) and the Sequential-Light checkpoints are
-ALREADY cached in ``HF_HOME``. Unlike the cloud drivers, ``main()`` does no
-pip-install and no git-clone.
+Primary execution backend. It runs on a local CUDA GPU where the upstream
+RecursiveMAS source is cloned at ``external/RecursiveMAS`` and pinned to the tested
+commit. The upstream clone is treated as read-only: this driver copies it into the
+run directory and patches only that disposable working copy.
 
 It reuses the unit-tested ``patch_run_py`` / ``patch_inference_mas`` from
 ``kernel_pkg/fidelity_kernel.py`` (loaded by path, so no package import is
@@ -14,13 +13,13 @@ needed), so the injected Variant B quantizer + Tier-2 logit capture are byte-for
 ``tests/test_fidelity_kernel.py``.
 
 Flow:
-  1. ``git checkout`` the two upstream files (pristine start; idempotent re-runs).
-  2. Patch run.py (sample cap, dtype, force-greedy, T default, --result_jsonl)
+  1. Verify the upstream commit and that tracked source files are clean.
+  2. Copy the upstream source into the run directory (excluding .git/ and caches).
+  3. Patch the copied run.py (sample cap, dtype, force-greedy, T default, --result_jsonl)
      and inference_mas.py (batch_size pin + Variant B head + adapter wrapping).
-  3. Subprocess ``run.py`` with VARIANT_B_BITS / CAPTURE_MODE / FIDELITY_SRC_ROOT
+  4. Subprocess the copied ``run.py`` with VARIANT_B_BITS / CAPTURE_MODE / FIDELITY_SRC_ROOT
      / FIDELITY_WORK_DIR propagated into the child env.
-  4. Collect the child-dumped artifacts (call-stats / per-problem / logits).
-  5. ``git checkout`` again to leave the upstream tree pristine.
+  5. Collect artifacts and delete the disposable source copy.
 
 Blackwell note: this machine is sm_120 with NATIVE bf16, so ``--dtype auto`` is
 safe and is the default here (the cloud drivers force float32 only because the T4
@@ -40,6 +39,7 @@ import importlib.util
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -48,8 +48,9 @@ from pathlib import Path
 THIS = Path(__file__).resolve()
 SWEEP_DIR = THIS.parent.parent                 # experiments/fidelity_sweep
 REPO_ROOT = SWEEP_DIR.parent.parent            # repo root (contains src/)
-UPSTREAM = REPO_ROOT / "external" / "RecursiveMAS"
+UPSTREAM_SOURCE = REPO_ROOT / "external" / "RecursiveMAS"
 UPSTREAM_FILES = ["run.py", "inference_utils/inference_mas.py"]
+EXPECTED_UPSTREAM_COMMIT = "f95d512017fb713e9ac519248fbfd3d270dafd68"
 
 
 def _load_kernel():
@@ -61,10 +62,37 @@ def _load_kernel():
     return mod
 
 
-def git_restore() -> None:
-    subprocess.run(
-        ["git", "-C", str(UPSTREAM), "checkout", "--", *UPSTREAM_FILES],
-        check=True,
+def verify_upstream_source() -> str:
+    """Verify the external upstream without modifying it."""
+    if not UPSTREAM_SOURCE.is_dir():
+        raise RuntimeError(f"upstream not found: {UPSTREAM_SOURCE}")
+    commit = subprocess.check_output(
+        ["git", "-C", str(UPSTREAM_SOURCE), "rev-parse", "HEAD"], text=True
+    ).strip()
+    if commit != EXPECTED_UPSTREAM_COMMIT:
+        raise RuntimeError(
+            f"RecursiveMAS commit mismatch: got {commit}, expected {EXPECTED_UPSTREAM_COMMIT}"
+        )
+    dirty = subprocess.check_output(
+        ["git", "-C", str(UPSTREAM_SOURCE), "status", "--porcelain", "--untracked-files=no"],
+        text=True,
+    ).strip()
+    if dirty:
+        raise RuntimeError(
+            "RecursiveMAS has tracked modifications; use a clean pinned clone. "
+            "The local backend will not overwrite upstream files."
+        )
+    return commit
+
+
+def copy_upstream_source(destination: Path) -> None:
+    """Create a disposable source copy while leaving the upstream clone untouched."""
+    if destination.exists():
+        shutil.rmtree(destination)
+    shutil.copytree(
+        UPSTREAM_SOURCE,
+        destination,
+        ignore=shutil.ignore_patterns(".git", "__pycache__", "*.pyc", "*.pyo"),
     )
 
 
@@ -93,11 +121,14 @@ def main() -> int:
     args = build_parser().parse_args()
     capture = not args.no_capture
 
-    if not UPSTREAM.is_dir():
-        print(f"[fatal] upstream not found: {UPSTREAM}", file=sys.stderr)
-        return 2
     if not (REPO_ROOT / "src").is_dir():
         print(f"[fatal] src/ not found under repo root: {REPO_ROOT}", file=sys.stderr)
+        return 2
+
+    try:
+        upstream_commit = verify_upstream_source()
+    except Exception as exc:
+        print(f"[fatal] {exc}", file=sys.stderr)
         return 2
 
     k = _load_kernel()
@@ -105,11 +136,13 @@ def main() -> int:
     config_tag = f"{args.dataset}_vb{args.bits}_T{args.t}_n{args.n_samples}_b{args.batch_size}_{args.dtype}"
     work_dir = Path(args.out) / config_tag
     work_dir.mkdir(parents=True, exist_ok=True)
+    upstream_work = work_dir / "_RecursiveMAS_work"
     jsonl_path = work_dir / f"per_problem_{config_tag}.jsonl"
 
     print(f"=== fidelity_local — {config_tag} ===")
     print(f"  repo_root      = {REPO_ROOT}")
-    print(f"  upstream       = {UPSTREAM}")
+    print(f"  upstream(src)  = {UPSTREAM_SOURCE} @ {upstream_commit[:8]} (read-only)")
+    print(f"  upstream(work) = {upstream_work}")
     print(f"  work_dir       = {work_dir}")
     print(f"  HF_HOME        = {os.environ.get('HF_HOME', '(unset)')}")
     print(f"  bits={args.bits} T={args.t} n={args.n_samples} batch={args.batch_size} "
@@ -119,9 +152,9 @@ def main() -> int:
     final_acc = None
     rc = -1
     try:
-        # ---- [1/3] pristine start, then patch ----
-        git_restore()
-        run_py = UPSTREAM / "run.py"
+        # ---- [1/3] disposable source copy, then patch only the copy ----
+        copy_upstream_source(upstream_work)
+        run_py = upstream_work / "run.py"
         src, rc_counts = k.patch_run_py(
             run_py.read_text(encoding="utf-8"),
             n_samples=args.n_samples,
@@ -132,7 +165,7 @@ def main() -> int:
         )
         run_py.write_text(src, encoding="utf-8")
 
-        infer_mas = UPSTREAM / "inference_utils" / "inference_mas.py"
+        infer_mas = upstream_work / "inference_utils" / "inference_mas.py"
         isrc, im_counts = k.patch_inference_mas(
             infer_mas.read_text(encoding="utf-8"),
             batch_size=args.batch_size,
@@ -156,6 +189,7 @@ def main() -> int:
             "FIDELITY_WORK_DIR": str(work_dir),
             "FIDELITY_SRC_ROOT": str(REPO_ROOT),
             "VB_LINKS": args.links,
+            "PYTHONDONTWRITEBYTECODE": "1",
         })
 
         cmd = [
@@ -169,7 +203,7 @@ def main() -> int:
             "--temperature", str(args.temperature),
             "--top_p", str(args.top_p),
         ]
-        print(f"\n[run] cwd={UPSTREAM}")
+        print(f"\n[run] cwd={upstream_work}")
         print(f"[run] {' '.join(cmd)}")
         print(f"[run] child: VARIANT_B_BITS={env['VARIANT_B_BITS']} CAPTURE_MODE={env['CAPTURE_MODE']} "
               f"FIDELITY_SRC_ROOT={env['FIDELITY_SRC_ROOT']}\n", flush=True)
@@ -177,7 +211,7 @@ def main() -> int:
         # ---- [3/3] run upstream, stream output, parse accuracy ----
         t_run = time.time()
         proc = subprocess.Popen(
-            cmd, cwd=str(UPSTREAM),
+            cmd, cwd=str(upstream_work),
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             env=env, bufsize=1, text=True,
         )
@@ -191,11 +225,9 @@ def main() -> int:
         rc = proc.returncode
         run_secs = time.time() - t_run
     finally:
-        # Always leave the upstream tree pristine, even on error/interrupt.
-        try:
-            git_restore()
-        except Exception as e:  # pragma: no cover
-            print(f"[warn] git restore failed: {e}", file=sys.stderr)
+        # Delete only our disposable copy. The external upstream is never written.
+        if upstream_work.exists():
+            shutil.rmtree(upstream_work, ignore_errors=True)
 
     # ---- collect child-dumped artifacts ----
     call_stats = None
@@ -224,6 +256,7 @@ def main() -> int:
             "batch_size": args.batch_size, "dataset": args.dataset, "dtype": args.dtype,
             "capture": capture, "links": args.links, "config_tag": config_tag,
             "seed": 42, "decoding": "greedy" if capture else "sampled",
+            "upstream_commit": upstream_commit,
         },
         "final_accuracy": final_acc,
         "return_code": rc,

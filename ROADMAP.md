@@ -54,14 +54,97 @@ for a position-aligned causal measurement.
 Canonical details and artifact provenance are in
 [`docs/reports/08_local_cross_cell_generalization.md`](docs/reports/08_local_cross_cell_generalization.md).
 
+## Scope decision — two separate papers (locked 2026-06-21)
+
+### Paper 1: behavioral fidelity and trajectory robustness (this repository/write-up)
+
+The current paper studies the **scientific effect of low-bit perturbation** on a
+recursive latent channel:
+
+- channel reconstruction fidelity;
+- aggregate answer accuracy and per-problem churn;
+- greedy trajectory divergence;
+- dependence on task and system tier;
+- mechanisms based on token margins, length, and teacher-forced distributions.
+
+Paper 1 continues to use fake quantization because that cleanly isolates the
+information-loss intervention. It must describe 4x--16x as **nominal packed-payload
+ratios**, not measured network speedups. A tiny pack/unpack correctness check may be
+mentioned if useful, but real kernels and performance optimization are **not a
+closure requirement** for this paper.
+
+### Paper 2: real codec, kernel, and distributed performance (future work)
+
+The implementation/systems paper will build and benchmark the actual transport path:
+
+- packed low-bit representation, norms, codebooks, seeds/rotation metadata;
+- fused CUDA or Triton quantize/dequantize kernels;
+- GPU memory traffic and kernel latency;
+- overlap of codec, communication, and model execution;
+- real transmitted bytes, bandwidth, end-to-end latency, throughput, and VRAM;
+- single-GPU simulation followed by multi-GPU or networked-agent evaluation;
+- fidelity parity between fake quantization and the packed implementation.
+
+This should be a separate report/paper because its research question, baselines,
+engineering work, and evaluation methodology are different. Do not delay Paper 1
+while waiting for the real kernel. Paper 2 may reuse the current fidelity tests as
+its numerical-correctness oracle.
+
 ## Priorities
 
-### 1. Replicate the tier contrast
+### 1. Confirm whether scaled is genuinely more trajectory-robust — NEXT ACTION
 
-Run at least three seeds for both MBPP cells and add `scaled x math500`. Report
-hierarchical or cluster-bootstrap intervals across seeds, not eight isolated p-values.
-This decides whether the 92.8% vs 51.2% gap is stable and whether it follows tier
-rather than task.
+This is the highest-priority scientific question. The 92.8% (light) versus 51.2%
+(scaled) MBPP+ divergence gap is the most novel result, but currently uses one
+quantizer rotation, one problem subset/order, one task contrast, and a 128-position
+window.
+
+#### 1A. Make seeds explicit before running
+
+The injected quantizer currently fixes its Haar/quantizer seed at 42. Add distinct,
+recorded CLI/config fields for:
+
+- `quantizer_seed` (rotation/codebook randomness; primary replication axis);
+- `generation_seed` (sampled decoding only);
+- problem indices/order or subset manifest.
+
+Do not call all three simply `seed`. Preserve seed 42 as the original condition and
+pre-register additional rotation seeds before inspecting results. Greedy REF does not
+depend on quantizer rotation and can be reused when every other condition is identical;
+INT4 must be rerun for each rotation.
+
+#### 1B. Minimum confirmatory matrix
+
+1. MBPP+ / light: INT4 at at least 5 quantizer rotations, same 250 problems.
+2. MBPP+ / scaled: the same rotations and problem indices.
+3. Math500 / scaled: REF plus the same INT4 rotations.
+4. Math500 / light: reuse the compatible REF and rerun INT4 rotations as needed.
+
+Use top-K=256 and capture at least 256 positions if memory/disk permit. Always report
+the original 128-position estimand as a fixed comparable slice; treat longer-window
+results as an additional survival/censoring analysis.
+
+#### 1C. Primary estimands and analysis
+
+- divergence probability within 128 positions;
+- first-divergence survival/hazard, accounting for output length and right-censoring;
+- common-prefix length;
+- answer churn and paired accuracy delta;
+- teacher-forced KL/JS, top-1/top-2 margin, chosen-token rank, and margin crossings.
+
+Report the light-minus-scaled contrast with a problem-clustered/hierarchical bootstrap
+over problems and rotations. Do not pool repeated rotations as if they were independent
+new benchmark problems. Check whether the tier coefficient survives adjustment for
+generation length, baseline correctness, and REF token margin.
+
+#### 1D. Interpretation gate
+
+- If scaled is lower-divergence across rotations and on both MBPP+ and Math500, call
+  it a **replicated tier-associated trajectory-robustness effect**.
+- If the difference disappears after length/margin adjustment, report the mediator
+  rather than a tier effect.
+- Do not call it a causal parameter-count/capacity law unless model family and
+  architecture are controlled more tightly than Sequential-Light versus Scaled.
 
 ### 2. Replace matched-prefix KL with teacher-forced fidelity
 
@@ -83,13 +166,7 @@ operationally meaningful. Then test mixture/distillation where memory permits. A
 high-baseline multiple-choice task to replace the confounded light-MedQA cell; GPQA
 remains gated by dataset access.
 
-### 5. Measure system value
-
-Report encoded bytes, quantize/dequantize latency, wall-clock overhead, peak VRAM,
-and end-to-end communication savings. The present 4x-16x figures are nominal payload
-compression ratios and do not yet include metadata or compute overhead.
-
-### 6. Strengthen inference
+### 5. Strengthen inference
 
 Pre-register the primary estimand and equivalence margin; use multiple seeds; report
 paired effect estimates and uncertainty; correct secondary multiple comparisons; and
@@ -115,3 +192,41 @@ second same-task light/scaled comparison, (3) teacher-forced aligned fidelity, a
 (4) a model/tier description that does not confound size with architecture. Until
 then, the publishable claim is a robust cross-cell dissociation between aggregate
 answer accuracy and individual trajectory identity, plus an exploratory tier contrast.
+
+## Minimum closure package
+
+Before freezing the study, complete these in order:
+
+1. **Confirmatory tier replication:** MBPP+ light/scaled across at least three
+   quantizer rotations, plus scaled Math500 at the same rotations.
+2. **Aligned mechanism test:** teacher-forced KL/rank/margin analysis and a
+   right-censored first-divergence hazard.
+3. **One algorithmic control:** unrotated scalar quantization at 4 bit; ideally add
+   the QJL residual and at least one lower/higher rate.
+4. **One operationally sensitive task:** deliberation/tool-calling or another task
+   where a changed intermediate action matters.
+5. **Reproducibility release:** second-machine clean rerun and checksumed raw local
+   artifact archive with environment/model hashes.
+
+Items 1--2 are required for a stronger Paper 1. Items 3--4 determine whether the
+result is specific to this quantizer/benchmark or generalizes mechanistically. Item 5
+is required for a strong reproducibility claim. Real packed transport and performance
+belong to Paper 2 and are intentionally excluded from the Paper 1 closure gate.
+
+## Handoff for the next Claude Code session
+
+Start here, in order:
+
+1. Read `AGENTS.md`, this roadmap, REPORT_08, and `REPRODUCIBILITY.md`.
+2. Do not modify `external/RecursiveMAS`; it is read-only third-party upstream.
+3. Add explicit `quantizer_seed` plumbing through the local driver and injected
+   quantizer factory, plus unit tests and manifest recording.
+4. Design the teacher-forced capture format before spending GPU time.
+5. Pre-register the rotation seeds, problem indices, primary 128-position estimand,
+   and bootstrap analysis in this roadmap/report.
+6. Run a tiny light/scaled smoke first, then launch the MBPP+ rotation matrix.
+7. Only after MBPP+ validates end-to-end, run scaled Math500.
+
+The immediate objective is not another broad benchmark sweep. It is to decide whether
+the scaled trajectory-stability gap is reproducible and to explain it with aligned
+margin/distribution measurements.

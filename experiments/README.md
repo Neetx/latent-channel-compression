@@ -9,8 +9,8 @@ This folder contains **only the scripts needed to reproduce the paper's results*
 | `distortion_validation/` | Per-link rMSE/cosine/norm-ratio at 2/3/4/8 bits, synthetic Gaussian-on-sphere + real Solver-adapter capture-replay | [report 02](../docs/reports/02_variant_b_synthetic.md), [report 03](../docs/reports/03_capture_replay_solver.md), [figure: distortion_vs_bits.png](../docs/figures/distortion_vs_bits.png) |
 | `solver_diagnostic/` | Solver-alone math500 accuracy (proves checkpoint is intact: 83% on n=100, greedy) | [report 05 §1.1](../docs/reports/05_hardware_root_cause.md) |
 | `baseline_a100_modal/` | Upstream `run.py` pristine on Modal A100 bf16, reproduces paper baseline (84-86% on math500) | [report 05 §1.3](../docs/reports/05_hardware_root_cause.md) |
-| `variant_b_ladder_t4_kaggle/` | **HEADLINE** — Variant B in-loop on Kaggle T4 fp32 at bit-rates {2, 4, 6, 8} (n=50 exploration + n=250 canonical) | [report 06](../docs/reports/06_variant_b_in_loop_HEADLINE.md), [figure: bit_rate_ladder_n250.png](../docs/figures/bit_rate_ladder_n250.png) |
-| `fidelity_sweep/` | Paired REF vs INT4 fidelity across cloud and four local task/tier cells: answer churn, channel distortion, corrected primary-call top-K trajectory analysis | [report 08](../docs/reports/08_local_cross_cell_generalization.md), `fidelity_sweep/analysis/analyze.py` |
+| `variant_b_ladder_t4_kaggle/` | Historical independent T4 fp32 Math500 ladder | [report 06](../docs/reports/06_variant_b_in_loop_HEADLINE.md) |
+| `fidelity_sweep/` | **PRIMARY** local RTX 5070 Ti four-cell study plus historical Kaggle/Modal backends | [report 08](../docs/reports/08_local_cross_cell_generalization.md), `fidelity_sweep/local_pkg/` |
 
 ## What was removed (and where its finding lives)
 

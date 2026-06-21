@@ -1,187 +1,156 @@
 # AGENTS.md
 
-Project-root instructions for AI coding agents working on this repository.
-Read this first. For deeper context follow the links to `docs/`.
+Project-root instructions for AI coding agents. Read this before changing code or
+interpreting results.
 
-## What this project is
+## Project and evidence hierarchy
 
-Research codebase that applies **TurboQuant Variant B** (Haar rotation +
-Lloyd-Max-Gaussian per-coordinate quantizer) to RecursiveMAS latent channels and
-measures channel distortion, generated-trajectory drift, and downstream accuracy
-across Sequential-Light/Scaled and math, code, and medical-QA tasks.
+This repository instruments the latent communication channel of the third-party
+RecursiveMAS system with TurboQuant Variant B (Haar rotation plus Lloyd--Max scalar
+quantization) and measures channel distortion, answer behavior, and greedy
+trajectory drift.
 
-**Canonical cloud finding (n=250):** Variant B compresses the
-Sequential-Light/math500 channel **4× to 16× with no detected accuracy change under
-sampled decoding**. Under greedy decoding, a stricter paired ±2 pp equivalence test
-at 4-bit is **INCONCLUSIVE** (Δ=−2.0 pp, not significant), while the trajectory
-changes in most captured sequences. See reports [06](docs/reports/06_variant_b_in_loop_HEADLINE.md)
-and [07](docs/reports/07_fidelity_sweep_modal.md).
+The **primary result** is the four-cell local RTX 5070 Ti study in
+[`docs/reports/08_local_cross_cell_generalization.md`](docs/reports/08_local_cross_cell_generalization.md).
+Kaggle/Modal reports 06--07 are independent historical cloud checks, not the primary
+reproduction path.
 
-**Latest local extension (2026-06-21):** four cells are complete on a 16 GB Blackwell
-GPU: light×{math500, MBPP+, MedQA} and scaled×MBPP+. The three clean math/code cells
-show small, non-significant aggregate accuracy deltas with 4.4--10% correctness churn.
-On MBPP+, corrected primary-solver-only Tier-2 analysis finds divergence within the
-first 128 positions of **92.8% (light) vs 51.2% (scaled)** at the same mean channel
-cosine (0.9953). Treat this as a strong tier association, **not yet a causal model-
-capacity law**. MedQA greedy is confounded by a pathological first-option bias in REF.
-See [report 08](docs/reports/08_local_cross_cell_generalization.md).
+Current local findings, n=250, seed 42, T=3:
 
-## Repository layout
+- sampled REF/8/4/2-bit ladders show no detected monotonic degradation in four cells;
+- clean greedy deltas are +2 pp (Math500/light), 0 pp (MBPP+/light), and -2 pp
+  (MBPP+/scaled), all with 95% intervals spanning zero;
+- answer churn is 4.4--10% in those clean cells;
+- corrected divergence within 128 positions is 86.4%, 92.8%, 51.2%, and 96.4%;
+- MBPP+/scaled is more trajectory-robust than MBPP+/light, an exploratory tier
+  association rather than a causal capacity law;
+- MedQA greedy is confounded by a pathological REF first-option bias.
 
-```
-.
-├── AGENTS.md                ← this file
-├── README.md                ← public overview (TL;DR + repro)
-├── .gitignore               ← excludes secrets, model artifacts, captured outputs
-├── bin/
-│   ├── kaggle               ← uvx wrapper for Kaggle CLI 2.x (use this, not `pip install kaggle`)
-│   ├── push_kaggle_vb_kernel.sh    ← portable push for the headline experiment
-│   └── push_fidelity_kernel.sh     ← portable push for the fidelity sweep
-├── docs/                    ← ALL documentation lives here (no .md sprinkled around)
-│   ├── README.md            ← documentation index
-│   ├── RESEARCH.md          ← master research design — read after headline
-│   ├── reports/             ← 8 numbered reports (06 headline, 07 cloud fidelity, 08 local generalization)
-│   ├── design/              ← architectural plans
-│   ├── operations/          ← experiments log + external reproducibility audit
-│   └── figures/             ← matplotlib PNG + the script that regenerates them
-├── src/                     ← Variant B + patcher + new fidelity metrics
-│   ├── quantizers/turboquant_honest.py  ← THE quantizer (don't touch logic, measure only)
-│   ├── adapters/patch.py    ← monkey-patches CrossModelAdapter.forward
-│   ├── metrics/
-│   │   ├── distortion.py          ← rMSE, cosine, norm_ratio, inner_product_error
-│   │   ├── channel_fidelity.py    ← FidelityRun, effective_rank, codebook_extreme_rate
-│   │   ├── logit_metrics.py       ← MSE, KL, JS at egress
-│   │   └── bootstrap.py           ← paired bootstrap + TOST equivalence
-│   └── utils/lloyd_max.py
-├── tests/                   ← unit/integration tests; run pytest for the current count
-└── experiments/             ← only 4 active folders — historical clutter archived
-    ├── distortion_validation/        ← per-link rMSE validation (write-up §4.1)
-    ├── solver_diagnostic/            ← Solver-alone math500 sanity (83%)
-    ├── baseline_a100_modal/          ← Modal A100 baseline reproduction
-    ├── variant_b_ladder_t4_kaggle/   ← main accuracy experiment — n=250 bit-rate ladder
-    └── fidelity_sweep/               ← paired fidelity; Kaggle, Modal, and local single-GPU backends share tested patch functions
-```
+Never call the intervention lossless, formally equivalent, trajectory preserving, or
+a deployed 4x--16x bandwidth saving. It is fake quantization with nominal packed
+payload ratios.
 
-## Build / test / run
+## Ownership boundary: RecursiveMAS is read-only upstream
+
+`external/RecursiveMAS` is a gitignored clone of the code released with the
+RecursiveMAS paper. It is not our repository.
+
+- Never edit, patch in place, restore, commit, or push files in that clone.
+- Pin it to `f95d512017fb713e9ac519248fbfd3d270dafd68`.
+- The local driver verifies the commit and tracked cleanliness, copies the source to
+  the run directory, and instruments only the disposable copy.
+- Do not vendor upstream code or model checkpoints into this repository.
+
+## Primary local reproduction
+
+Follow [`REPRODUCIBILITY.md`](REPRODUCIBILITY.md). The tested environment is Python
+3.12, PyTorch 2.9.0+cu128, native bf16 on RTX 5070 Ti 16 GB under WSL2.
 
 ```bash
-# Run all tests (must stay green; the TurboQuant reference module may skip if absent)
-.venv/bin/python -m pytest tests/
+export HF_HOME="${HF_HOME:-$HOME/.cache/huggingface}"
+export LCC_RUN_ROOT="${LCC_RUN_ROOT:-$HOME/lcc/runs}"
+export PYTHONDONTWRITEBYTECODE=1
 
-# Validate the fidelity sweep's risky logic WITHOUT a GPU: the kernel's regex
-# patches are checked against the real cloned upstream, and the JSONL parser +
-# analysis glue are exercised on synthetic data. Run before spending Kaggle quota.
-.venv/bin/python -m pytest tests/test_fidelity_metrics.py \
-    tests/test_fidelity_kernel.py tests/test_fidelity_analyze.py -v
+.venv/bin/python -m pytest tests/ -q
+.venv/bin/python experiments/fidelity_sweep/local_pkg/setup/verify_gpu.py
 
-# Regenerate publication figures (matplotlib PNGs into docs/figures/)
-.venv/bin/python docs/figures/_generate_figures.py
-
-# Re-clone upstream (NOT in tree; required for any Kaggle/Modal experiment)
-git clone https://github.com/RecursiveMAS/RecursiveMAS.git external/RecursiveMAS
-
-# Headline experiment: push one Kaggle T4 kernel
-./bin/push_kaggle_vb_kernel.sh <bits> <n_samples> <batch_size>
-# e.g.  ./bin/push_kaggle_vb_kernel.sh 4 250 4
-
-# Fidelity sweep (Tier 2) — Modal A100 fp32 (PRIMARY since Kaggle quota ran out)
-modal run experiments/fidelity_sweep/modal_pkg/fidelity_modal.py --bits 0 --t 3 --n-samples 30 --batch-size 8  # REF
-modal run experiments/fidelity_sweep/modal_pkg/fidelity_modal.py --bits 4 --t 3 --n-samples 30 --batch-size 8  # INT4
-# download both then analyze (see below). Modal A100 fp32 avoids the bf16 cast artifact.
-
-# Fidelity sweep (Tier 2) — Kaggle T4 (free, when weekly quota is available)
-./bin/push_fidelity_kernel.sh <bits> <T> <n_samples> <batch_size>
-# e.g.  ./bin/push_fidelity_kernel.sh 0 3 50 4   # REF, T=3, n=50, b=4
-#       ./bin/push_fidelity_kernel.sh 4 3 50 4   # INT4 (4-bit), T=3, n=50, b=4
-
-# Analyze fidelity sweep results post-hoc
-.venv/bin/python experiments/fidelity_sweep/analysis/analyze.py \
-    --inputs <dir_with_downloaded_kernel_outputs> \
-    --logit-dir <dir_with_per_kernel_NPZ_subdirs> \
-    --out experiments/fidelity_sweep/analysis/results
-
-# Local single-GPU backend (native bf16 on Ampere+; see local_pkg/README.md)
 .venv/bin/python experiments/fidelity_sweep/local_pkg/run_cell.py \
-    --style sequential_light --dataset math500 --n 250 \
-    --ladder-batch 16 --cap-batch 2
+  --style sequential_light --dataset math500 --n 250 \
+  --ladder-batch 16 --cap-batch 2
 ```
 
-## Key invariants (DO NOT VIOLATE)
+`run_cell.py` is canonical. Historical `run_step*.sh` wrappers are compatibility
+helpers, not the documented entrypoint. A full four-cell reproduction takes about
+36 sequential GPU-hours and roughly 34 GB of checkpoint cache.
 
-1. **No secrets in tree.** `.kaggle/`, `.mcp.json`, `.env`, `*.env` are gitignored AND must not exist in the working tree. The previous cleanup removed a real Kaggle API token (`KGAT_…`) — never re-introduce it.
-2. **No personal or machine-specific info (this repo is public).** The publication
-   author name `Antonio Pastorelli` is explicitly approved; do not add an email,
-   account username, home-directory path, or local cache path. Kaggle uses
-   `<YOUR_KAGGLE_USERNAME>`. Scrub captured logs before committing.
-3. **`external/` is gitignored.** Don't commit the upstream RecursiveMAS clone — agents must `git clone` it themselves.
-4. **All scripts must be reproducible from a single command.** Helper scripts use `$PROJECT_ROOT` resolution, not absolute paths. Test it from a clean checkout.
-5. **No edits to model or quantizer logic when adding measurement.** The fidelity sweep is **instrumentation only** — `src/quantizers/turboquant_honest.py` and the recursive pipeline are not modified. See `docs/reports/05_hardware_root_cause.md` §6 and `docs/reports/06_variant_b_in_loop_HEADLINE.md` for the methodology contract.
-6. **Determinism.** Every new metric/bootstrap function accepts an explicit `seed` and uses `numpy.random.default_rng(seed)` so a single seed reproduces the entire distribution bit-for-bit.
+Post-hoc checks:
 
-## Hardware advisory (critical for any new experiment)
+```bash
+# Works from committed compact correctness records, no GPU/raw NPZ required.
+.venv/bin/python experiments/fidelity_sweep/local_pkg/analysis/compare_cells.py
 
-RecursiveMAS Sequential-Light **silently collapses to ~30% accuracy** on pre-Ampere GPUs with default `--dtype auto` (which loads bf16 from the checkpoint config and falls back to fp16 on non-bf16 hardware). This invalidated 22 P100 experiments and was the project's biggest reproducibility hazard.
+# Fresh local run; raw NPZ required for Tier-2.
+.venv/bin/python experiments/fidelity_sweep/local_pkg/analysis/compare_cells.py \
+  --run-root "$LCC_RUN_ROOT"
+.venv/bin/python experiments/fidelity_sweep/local_pkg/analysis/tier2_logit_fidelity.py \
+  --run-root "$LCC_RUN_ROOT"
+```
 
-**Safe configurations:**
-- Ampere+ (sm_80+, e.g. A100, H100, RTX 30/40, L4, L40S) with `--dtype auto` (native bf16) ✓
-- Pre-Ampere (T4 sm_75, V100, P100) with **`--dtype float32` EXPLICIT** (b=4 to fit memory) ✓
-- Anything else: SILENT CORRUPTION. Do not trust accuracy numbers.
+## Repository map
 
-Full details in [docs/reports/05_hardware_root_cause.md](docs/reports/05_hardware_root_cause.md).
-
-## Current state of research
-
-**Closed:**
-- ✓ Per-link rMSE matches TurboQuant Table 1 to 3rd decimal across synthetic, capture-replay, in-loop (reports 02, 03)
-- ✓ Hardware/dtype advisory documented + figure generated (report 05 §15)
-- ✓ Bit-rate ladder at n=250 on Kaggle T4 fp32 — no measurable accuracy change 4×-16× under sampled decoding (report 06; greedy nuance in report 07)
-
-**Active / latest:**
-- ✓ Modal Tier-2 cloud sweep complete: T∈{1,2,3,4}, powered n=250 T=3,
-  REF-vs-REF control, and selective inner/outer runs (report 07).
-- ✓ Local backend and four-cell extension complete (report 08). Raw logit NPZs remain
-  local; compact correctness artifacts and summaries are public.
-- ⚠️ Tier-2 pairing must exclude conditional answer-retry calls. `analyze.py` now
-  accepts/derives a primary-batch limit; local captures are K=256, window=128.
-- ⚠️ Matched-prefix KL is a top-K, selection-conditioned approximation. Do not infer
-  a reliable depth trend or causal capacity mechanism from it.
-- ⏳ Next: scaled×math500, multi-seed MBPP+ light/scaled, divergence hazard/length
-  analysis, logit-margin mediation, and teacher-forced position-aligned KL.
-
-**Open (post-Tier 2/local extension):**
-- ⌛ multi-seed effect estimation and the remaining light/scaled matrix cells
-- ⌛ right-censored first-divergence analysis and teacher-forced KL
-- ⌛ QJL residual ablation and packed-transport systems measurement
-
-## Where each thing is documented
-
-| If you need to know… | Read |
+| path | role |
 |---|---|
-| The main claim and its statistics | [docs/reports/06](docs/reports/06_variant_b_in_loop_HEADLINE.md) |
-| Why pre-Ampere GPUs were a trap | [docs/reports/05 §15](docs/reports/05_hardware_root_cause.md) |
-| Why 22 P100 experiments are retracted | [docs/reports/04](docs/reports/04_kaggle_p100_RETRACTED.md) |
-| Per-link distortion math (TurboQuant theory match) | [docs/reports/02](docs/reports/02_variant_b_synthetic.md) + [03](docs/reports/03_capture_replay_solver.md) |
-| Architectural decisions (patching, dtype routing) | [docs/design/architecture.md](docs/design/architecture.md) |
-| External reproduction workflow | [REPRODUCIBILITY.md](REPRODUCIBILITY.md) + [audit](docs/operations/external_reproducibility_audit.md) |
-| Inventory of every kernel ever pushed | [docs/operations/experiments_log.md](docs/operations/experiments_log.md) |
-| Tier 2 fidelity-sweep methodology | [experiments/fidelity_sweep/README.md](experiments/fidelity_sweep/README.md) |
-| Local cross-task/tier results and corrected trajectory analysis | [docs/reports/08](docs/reports/08_local_cross_cell_generalization.md) |
+| `src/quantizers/turboquant_honest.py` | Variant B implementation; do not change while adding measurement |
+| `src/adapters/patch.py` | reversible adapter instrumentation |
+| `src/metrics/` | deterministic fidelity/bootstrap metrics |
+| `experiments/fidelity_sweep/local_pkg/` | primary local runner, setup, analyses, compact results |
+| `experiments/fidelity_sweep/kernel_pkg/` | shared patch functions and historical Kaggle backend |
+| `experiments/fidelity_sweep/modal_pkg/` | historical Modal backend |
+| `docs/reports/08_*` | canonical current result |
+| `docs/reports/05_*` | hardware/dtype failure analysis |
+| `writeup/main.tex`, `main.pdf` | current paper and compiled PDF |
 
-## Don'ts
+## Scientific invariants
 
-- ❌ Don't reintroduce `experiments/00_setup/`, `03_pristine_baseline_p100_FAILED/`, `05_variant_b_modal_a100_dtype_artifact/`, `retracted_p100_inloop/`, or `experiments/results/`. Their findings live in `docs/reports/`; the scripts were archived for repo cleanliness on 2026-06-01.
-- ❌ Don't push to Kaggle without first scrubbing `<YOUR_KAGGLE_USERNAME>` placeholders.
-- ❌ Don't write ASCII bar charts in reports. Use matplotlib → PNG → reference from markdown. See `docs/figures/_generate_figures.py`.
-- ❌ Don't trust accuracy numbers from any experiment that didn't either (a) run on Ampere+ with `--dtype auto`, or (b) run on pre-Ampere with `--dtype float32` explicitly. Pascal/Turing with auto-dtype → silent collapse.
-- ❌ Don't commit `external/` or `.venv/` (both gitignored, but be aware).
-- ❌ Don't run `pip install kaggle` to get the Kaggle CLI — use `./bin/kaggle` which wraps `kaggle-cli 2.x` via `uvx` and exposes the modern fields (`enable_gpu`, `dataset_sources`, `--accelerator NvidiaTeslaT4`, etc.).
+1. **Instrumentation only.** Do not alter model weights, prompts, quantizer math, or
+   evaluation semantics while adding measurement.
+2. **Determinism.** Statistical helpers take an explicit seed and use
+   `numpy.random.default_rng(seed)`.
+3. **Primary-call pairing.** Tier-2 pairs only fixed primary generate batches;
+   condition-dependent answer retries are excluded.
+4. **Correct tail accounting.** Missing union-token estimates are deducted from the
+   residual tail; do not double count them.
+5. **Censoring.** Local divergence means divergence within at most 128 captured
+   positions, not full-generation divergence.
+6. **Matched-prefix limitation.** KL/JS are top-K and selection-conditioned; do not
+   infer teacher-forced full-trajectory fidelity or a reliable depth trend.
+7. **MedQA exclusion.** Do not use the greedy MedQA delta as a clean channel effect.
 
-## Coding conventions
+## Hardware safety
 
-- Python ≥3.10, project venv at `.venv/`.
-- Type hints + docstrings on every public function in `src/`.
-- Tests are the verification mechanism — every metric / statistical helper has at minimum: (a) determinism test, (b) edge-case test, (c) sanity-check against known answer.
-- Markdown for human docs; use `![alt](path)` for figures so they render on GitHub.
-- ASCII tables in markdown are fine for small data; for anything that benefits from a plot, generate it via matplotlib (see `docs/figures/_generate_figures.py` for the style).
+- Ampere or newer: `--dtype auto` may use native bf16; verify with `verify_gpu.py`.
+- Pre-Ampere: force fp32. Auto/bf16 silently collapsed earlier RecursiveMAS runs.
+- Local light batches: 16 sampled, 2 capture.
+- Local scaled MBPP+ batches: 4 sampled, 1 capture, with
+  `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`.
+- Do not extrapolate exact sampled accuracies across hardware/dtype configurations.
 
-## Imported Claude Cowork project instructions
+## Public-repository hygiene
+
+- No secrets, API tokens, account usernames, author email, or personal absolute paths.
+- The approved publication author name is `Antonio Pastorelli`.
+- Do not commit `external/`, `.venv/`, checkpoints, model weights, NPZs, raw prompts,
+  generations, caches, or machine logs.
+- Compact correctness JSONLs may be committed after removing prompts, dataset paths,
+  traces, and error payloads.
+- Raw artifacts should be archived separately with SHA256 manifests if they are to be
+  cited as a reproducibility bundle.
+
+## Tests and documentation discipline
+
+Run before committing:
+
+```bash
+.venv/bin/python -m pytest tests/ -q
+.venv/bin/python -m py_compile \
+  experiments/fidelity_sweep/local_pkg/*.py \
+  experiments/fidelity_sweep/local_pkg/analysis/*.py \
+  experiments/fidelity_sweep/local_pkg/setup/*.py
+git diff --check
+```
+
+When results or methods change, update together:
+
+- `README.md`, `REPRODUCIBILITY.md`, `ROADMAP.md`, and this file;
+- `docs/RESEARCH.md` and REPORT_08;
+- `writeup/main.tex` and the compiled `writeup/main.pdf`;
+- relevant experiment README/result summaries and tests.
+
+## Highest-value open work
+
+1. multi-seed MBPP+ light/scaled replication and scaled Math500;
+2. teacher-forced position-aligned KL plus token-margin mediation;
+3. rate-distortion sweep with scalar/no-rotation baseline and QJL residual;
+4. deliberation/tool-calling topology and a strong non-math benchmark;
+5. real packed bytes, codec latency, VRAM, and end-to-end throughput;
+6. public raw-artifact archive with manifests.

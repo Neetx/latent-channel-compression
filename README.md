@@ -1,129 +1,130 @@
-# Latent Space Compression Research — RecursiveLink × TurboQuant
+# Latent Space Compression Research — RecursiveMAS x TurboQuant
 
-Quantizing the inter-agent latent communication channel of [RecursiveMAS](https://github.com/RecursiveMAS/RecursiveMAS) Sequential-Light with the **MSE-optimal core of [TurboQuant](https://arxiv.org/abs/2504.19874)** (ICLR 2026) — a data-oblivious Haar rotation + Lloyd-Max quantizer, *without* the QJL inner-product residual. This repo labels that quantizer **Variant B**.
+This repository studies whether the inter-agent latent channel of
+[RecursiveMAS](https://github.com/RecursiveMAS/RecursiveMAS) can tolerate the
+data-oblivious MSE core of
+[TurboQuant](https://arxiv.org/abs/2504.19874): Haar rotation followed by a
+Lloyd--Max scalar quantizer, without the QJL residual.
 
-## TL;DR
+## Main result: four local cells on one RTX 5070 Ti
 
-**Variant B compresses the RecursiveMAS Sequential-Light inter-agent latent channel 4× to 16× with no measurable accuracy change under sampled decoding.**
+The primary study runs locally on an RTX 5070 Ti 16 GB in native bf16. It evaluates
+four $n=250$ task/tier cells, seed 42, three recursive rounds, with a sampled
+REF/8/4/2-bit ladder and paired greedy REF/INT4 capture.
 
-![bit-rate vs accuracy at n=250](docs/figures/bit_rate_ladder_n250.png)
+| cell | sampled REF/8/4/2 bit accuracy | greedy delta (95% CI) | answer churn | divergence within 128 positions |
+|---|---:|---:|---:|---:|
+| Math500 / light | 77.6 / 76.0 / 78.8 / 78.0 | +2.0 pp [-2.0,+6.0] | 10.0% | 86.4% |
+| MBPP+ / light | 32.8 / 33.6 / 38.8 / 34.8 | 0.0 pp [-4.0,+4.0] | 9.6% | 92.8% |
+| MBPP+ / scaled | 70.8 / 73.6 / 72.0 / 71.2 | -2.0 pp [-4.8,+0.4] | 4.4% | 51.2% |
+| MedQA / light | 34.4 / 26.4 / 32.8 / 30.0 | confounded | 30.4% | 96.4% |
 
-Measured on math500, n=250, seed=42, **sampled** decoding, Kaggle T4 with `--dtype float32`. We do not detect an accuracy degradation for bit-rates {2, 4, 8} relative to the 75.2% baseline (two-proportion z-tests, all p > 0.4; 95% Wald intervals straddle zero); 2-bit reaches the same accuracy count as baseline (188/250) at 16× compression. ("No detected change" is not a proof of equality — see the caveat below.)
+The defensible conclusion is:
 
-> ⚠️ **Honest caveat (don't read this as unconditional "lossless").** Under
-> **greedy** decoding, paired accuracy intervals still allow effects of a few points,
-> 4.4--10% of individual correctness outcomes change in the clean local cells, and
-> 51.2--92.8% of primary sequences diverge within a 128-position capture window.
-> The headline is an aggregate sampled-decoding statement, not bit-exact preservation.
-> See [REPORT_08](docs/reports/08_local_cross_cell_generalization.md).
+> At the tested sample size, aggressive fake quantization produces no detected
+> monotonic aggregate-accuracy degradation in the four sampled ladders. It is not
+> behaviorally lossless: individual answers change and most light-tier greedy
+> trajectories diverge within the capture window.
 
-## Local cross-task and tier extension
+The MBPP+ same-task contrast is especially interesting: scaled diverges much less
+than light (51.2% versus 92.8%) and has lower matched-prefix KL (0.059 versus 0.113
+nats) at nearly identical mean channel cosine. This is a strong **tier association**,
+not yet a causal law of model capacity; architecture, checkpoint family, competence,
+length, and token margins also differ.
 
-A third backend reproduced the experiment on an RTX 5070 Ti (native bf16) and
-extended it to four cells: Sequential-Light × {math500, MBPP+, MedQA} and
-Sequential-Scaled × MBPP+. In the three clean math/code cells, paired greedy
-accuracy deltas are small and non-significant, although 4.4--10% of individual
-correctness outcomes change. MedQA greedy is excluded from that summary because its
-weak unquantized REF develops a pathological first-option bias.
+MedQA greedy REF develops a pathological first-option bias. Its apparent +15.2 pp
+INT4 gain is a diagnostic failure case, not evidence that quantization improves
+medical reasoning. Use its non-monotonic sampled ladder for task-level interpretation.
 
-The corrected local trajectory analysis excludes conditional answer-retry calls and
-is explicitly windowed to the first 128 decode positions. On the same MBPP+ task,
-windowed divergence is **92.8% for Sequential-Light and 51.2% for
-Sequential-Scaled**, at the same mean per-call channel cosine (0.9953). This is a
-strong tier-associated robustness result, not yet a causal claim that parameter
-count alone explains the difference. See [REPORT_08](docs/reports/08_local_cross_cell_generalization.md).
+Full statistics and methodology are in
+[REPORT_08](docs/reports/08_local_cross_cell_generalization.md).
 
-The powered greedy T=3 run measured ~1,152 latent token-vectors per math500 problem (all-link); at a representative channel dimension d≈2048 this is an **information-theoretic** reduction from ~9.0 MiB (fp32) to ~1.1 MiB (4-bit) / ~0.56 MiB (2-bit) per problem (a potential saving; we measure fake-quantization fidelity, not wall-clock bandwidth).
+## Reproduce locally
 
-## Repository layout
+The primary reproduction guide is
+[REPRODUCIBILITY.md](REPRODUCIBILITY.md). It covers:
 
+1. the exact Python 3.12 / PyTorch 2.9.0+cu128 environment;
+2. cloning and pinning the read-only RecursiveMAS upstream;
+3. checkpoint download and adapter-manifest validation;
+4. a four-sample end-to-end GPU smoke test;
+5. the four full local cells and their deterministic output layout;
+6. answer-level and corrected Tier-2 analysis from the generated artifacts.
+
+Minimal shape of the workflow:
+
+```bash
+git clone https://github.com/RecursiveMAS/RecursiveMAS.git external/RecursiveMAS
+git -C external/RecursiveMAS checkout f95d512017fb713e9ac519248fbfd3d270dafd68
+
+# Create .venv and install the cu128 torch wheel + requirements.txt first.
+export HF_HOME="$HOME/.cache/huggingface"
+export LCC_RUN_ROOT="$HOME/lcc/runs"
+
+.venv/bin/python experiments/fidelity_sweep/local_pkg/setup/verify_gpu.py
+.venv/bin/python experiments/fidelity_sweep/local_pkg/setup/download_checkpoints.py
+.venv/bin/python experiments/fidelity_sweep/local_pkg/setup/download_scaled.py
+
+.venv/bin/python experiments/fidelity_sweep/local_pkg/run_cell.py \
+  --style sequential_light --dataset math500 --n 250 \
+  --ladder-batch 16 --cap-batch 2
 ```
-.
-├── README.md                ← you are here
-├── docs/                    ← documentation (research design, reports, figures, plans)
-├── src/                     ← Variant B quantizer + RecursiveLink patch infrastructure
-├── tests/                   ← unit tests (run `python -m pytest tests/`)
-├── experiments/             ← scripts to reproduce results (fidelity_sweep = Tier 2)
-├── writeup/                 ← LaTeX write-up draft
-├── requirements.txt         ← local env for tests + offline analysis
-├── LICENSE                  ← All Rights Reserved (source-visible, not open-source)
-└── bin/                     ← helper CLI wrappers
-```
 
-| Path | Read first |
+The runner treats `external/RecursiveMAS` as read-only. It verifies the pinned commit,
+copies the upstream source into the run directory, instruments only the disposable
+copy, and removes that copy after execution.
+
+## What the experiment measures
+
+- **Channel fidelity:** relative L2/MSE, cosine, norm ratio, and call counts.
+- **Answer behavior:** sampled accuracy ladder, paired greedy delta, discordant pairs,
+  McNemar test, bootstrap interval, TOST, and answer churn.
+- **Trajectory behavior:** divergence within 128 captured positions, common-prefix
+  length, and approximate matched-prefix KL/JS on a corrected top-K union.
+
+The 4x--16x ratios are nominal packed-payload ratios. The study uses fake
+quantization and does not yet measure real serialized bytes, network latency, codec
+overhead, or end-to-end throughput.
+
+## Independent cloud history
+
+Kaggle T4 fp32 produced the original $n=250$ Math500 ladder, and Modal A100 fp32
+produced deterministic controls and the original depth sweep. They independently
+motivated and validated the safe dtype path, but they are now secondary historical
+evidence rather than the primary reproduction target:
+
+- [REPORT_05](docs/reports/05_hardware_root_cause.md): hardware/dtype failures;
+- [REPORT_06](docs/reports/06_variant_b_in_loop_HEADLINE.md): original cloud ladder;
+- [REPORT_07](docs/reports/07_fidelity_sweep_modal.md): historical cloud fidelity;
+- [REPORT_08](docs/reports/08_local_cross_cell_generalization.md): current local result.
+
+REPORT_07's KL/divergence values used the legacy estimator and should not be compared
+numerically with corrected local Tier-2 values without reanalyzing the raw cloud NPZs.
+
+## Repository map
+
+| path | purpose |
 |---|---|
-| [docs/RESEARCH.md](docs/RESEARCH.md) | Master research design — hypotheses, method, current state |
-| [docs/reports/06_variant_b_in_loop_HEADLINE.md](docs/reports/06_variant_b_in_loop_HEADLINE.md) | The main accuracy finding (n=250) |
-| [docs/reports/07_fidelity_sweep_modal.md](docs/reports/07_fidelity_sweep_modal.md) | Tier 2 fidelity: channel + per-step KL vs depth, TOST |
-| [docs/reports/08_local_cross_cell_generalization.md](docs/reports/08_local_cross_cell_generalization.md) | Local cross-task/tier results + corrected trajectory analysis |
-| [docs/reports/05_hardware_root_cause.md](docs/reports/05_hardware_root_cause.md) | Why pre-Ampere GPUs collapse this pipeline |
-| [REPRODUCIBILITY.md](REPRODUCIBILITY.md) | End-to-end external reproduction: run, fetch, verify, analyze |
-| [experiments/README.md](experiments/README.md) | How to reproduce each result |
-| [writeup/README.md](writeup/README.md) | Write-up + build instructions |
-| [ROADMAP.md](ROADMAP.md) | Where the research goes next (future work) |
+| [docs/RESEARCH.md](docs/RESEARCH.md) | current claims, design, limits, and evidence authority |
+| [REPRODUCIBILITY.md](REPRODUCIBILITY.md) | primary clean-clone RTX 5070 Ti workflow |
+| [experiments/fidelity_sweep/local_pkg/](experiments/fidelity_sweep/local_pkg/) | local runner, setup, analyzers, and compact result artifacts |
+| [docs/reports/08_local_cross_cell_generalization.md](docs/reports/08_local_cross_cell_generalization.md) | canonical four-cell report |
+| [ROADMAP.md](ROADMAP.md) | prioritized remaining research |
+| [writeup/main.pdf](writeup/main.pdf) | current paper |
 
-## Quick reproduction
+## What is not committed
 
-The main result (Variant B bit-rate ladder at n=250) requires Kaggle T4 GPU (free tier). Setup:
+- the third-party `external/RecursiveMAS` clone;
+- model checkpoints and Hugging Face cache;
+- raw logit NPZs, prompts, generations, and machine logs;
+- cloud credentials or private cloud volumes.
 
-```bash
-# 1. Install Python deps
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt     # numpy, scipy, matplotlib, torch, pytest
-python -m pytest tests/             # current suite; reference-oracle tests may skip if absent
-
-# 2. Configure Kaggle CLI credentials
-#    (KAGGLE_USERNAME + KAGGLE_KEY env vars OR ~/.kaggle/kaggle.json)
-
-# 3. Push the dataset (Variant B src/ as a Kaggle private dataset, one-time)
-./bin/kaggle datasets create -p experiments/variant_b_ladder_t4_kaggle/dataset_pkg --dir-mode skip
-
-# 4. Edit experiments/variant_b_ladder_t4_kaggle/kernel_pkg/kernel-metadata.json
-#    to replace <YOUR_KAGGLE_USERNAME> with your username
-
-# 5. Push and run the bit-rate ladder
-./bin/push_kaggle_vb_kernel.sh 0 250 4   # baseline
-./bin/push_kaggle_vb_kernel.sh 4 250 4   # Variant B 4-bit  (8× compression)
-./bin/push_kaggle_vb_kernel.sh 2 250 4   # Variant B 2-bit  (16× compression)
-```
-
-Each kernel takes ~7-8 hours on Kaggle T4 fp32 b=4. Results download with
-`./bin/kaggle kernels output ...`; verify and analyze them with:
-
-```bash
-.venv/bin/python bin/verify_artifacts.py /tmp/rmas_ladder_outputs \
-    --manifest /tmp/rmas_ladder_outputs/SHA256SUMS.json
-
-.venv/bin/python experiments/variant_b_ladder_t4_kaggle/analysis/analyze_ladder.py \
-    --inputs /tmp/rmas_ladder_outputs \
-    --n-samples 250 \
-    --batch-size 4 \
-    --out experiments/variant_b_ladder_t4_kaggle/analysis/results
-```
-
-For the full cloud run/fetch/analyze workflow, including Modal fidelity outputs
-and checksum verification, use [REPRODUCIBILITY.md](REPRODUCIBILITY.md).
-
-## What's NOT in this repo
-
-- `external/RecursiveMAS/` — upstream code clone (4.8 MB). Get it with:
-  `git clone https://github.com/RecursiveMAS/RecursiveMAS.git external/RecursiveMAS`
-  then `git -C external/RecursiveMAS checkout f95d512017fb713e9ac519248fbfd3d270dafd68`.
-- Cloud credentials (Kaggle API key, Modal token). Configure your own.
-- Raw kernel output logs from past runs (~97 MB). The canonical numbers are in the markdown reports; re-running gets you fresh logs.
-- 22 retracted Phase 0.B Kaggle P100 in-loop scripts. Findings preserved in [docs/reports/04_kaggle_p100_RETRACTED.md](docs/reports/04_kaggle_p100_RETRACTED.md).
-- Intermediate failed/superseded experiments. Findings preserved in [docs/reports/05_hardware_root_cause.md](docs/reports/05_hardware_root_cause.md).
-
-## Compute platforms used
-
-- **Kaggle Tesla T4 16GB (free)** — accuracy ladder (REPORT_06). Requires `--dtype float32` explicit (T4 lacks native bf16 → silent collapse with auto dtype).
-- **Modal A100 40GB (monthly free credit)** — baseline reproduction + the Tier 2 fidelity sweep (REPORT_07), fp32. The fidelity sweep is launched with `modal run experiments/fidelity_sweep/modal_pkg/fidelity_modal.py::sweep`.
-- **Local RTX 5070 Ti 16GB** — native-bf16 replication and four-cell task/tier extension (REPORT_08).
+Compact per-problem correctness artifacts are committed so the answer-level table can
+be recomputed without a GPU. Exact Tier-2 reproduction requires regenerating the raw
+local captures or obtaining a separately archived checksum bundle.
 
 ## License
 
-**All rights reserved** — see [LICENSE](LICENSE). This repository is made public
-for transparency and reproducibility only; it is not open-source. Please do not
-use, copy, modify, or redistribute any part of it without explicit written
-permission. It builds on RecursiveMAS and TurboQuant, which carry their own
-licenses.
+**All rights reserved** — see [LICENSE](LICENSE). This repository is public for
+transparency and reproducibility, but it is not open-source. RecursiveMAS and
+TurboQuant remain governed by their own repositories and licenses.

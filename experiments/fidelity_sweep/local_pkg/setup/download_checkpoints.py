@@ -4,6 +4,7 @@ import time
 from pathlib import Path
 
 # Make upstream resolvers importable
+sys.dont_write_bytecode = True
 REPO = Path(__file__).resolve().parents[4] / "external" / "RecursiveMAS"
 sys.path.insert(0, str(REPO))
 

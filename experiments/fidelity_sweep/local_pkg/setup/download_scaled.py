@@ -16,6 +16,7 @@ import sys
 import time
 from pathlib import Path
 
+sys.dont_write_bytecode = True
 REPO = Path(__file__).resolve().parents[4] / "external" / "RecursiveMAS"
 sys.path.insert(0, str(REPO))
 from huggingface_hub import snapshot_download

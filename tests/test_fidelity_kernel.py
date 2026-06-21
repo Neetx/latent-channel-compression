@@ -23,6 +23,8 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 KERNEL_PATH = ROOT / "experiments" / "fidelity_sweep" / "kernel_pkg" / "fidelity_kernel.py"
+LOCAL_DRIVER_PATH = ROOT / "experiments" / "fidelity_sweep" / "local_pkg" / "fidelity_local.py"
+RUN_CELL_PATH = ROOT / "experiments" / "fidelity_sweep" / "local_pkg" / "run_cell.py"
 UPSTREAM = ROOT / "external" / "RecursiveMAS"
 
 
@@ -34,9 +36,65 @@ def _load_kernel():
     return mod
 
 
+def _load_path(name: str, path: Path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 @pytest.fixture(scope="module")
 def kernel():
     return _load_kernel()
+
+
+class TestLocalBackendIsolation:
+    def test_copy_upstream_uses_disposable_tree(self, tmp_path, monkeypatch):
+        local = _load_path("fidelity_local_test", LOCAL_DRIVER_PATH)
+        source = tmp_path / "source"
+        destination = tmp_path / "run" / "_RecursiveMAS_work"
+        (source / ".git").mkdir(parents=True)
+        (source / "__pycache__").mkdir()
+        (source / "inference_utils").mkdir()
+        (source / "run.py").write_text("ORIGINAL = True\n")
+        (source / "inference_utils" / "inference_mas.py").write_text("VALUE = 1\n")
+        (source / ".git" / "config").write_text("private git metadata")
+        (source / "__pycache__" / "x.pyc").write_bytes(b"cache")
+        monkeypatch.setattr(local, "UPSTREAM_SOURCE", source)
+
+        local.copy_upstream_source(destination)
+        (destination / "run.py").write_text("PATCHED = True\n")
+
+        assert (source / "run.py").read_text() == "ORIGINAL = True\n"
+        assert not (destination / ".git").exists()
+        assert not (destination / "__pycache__").exists()
+
+    def test_local_driver_has_no_checkout_restore_path(self):
+        source = LOCAL_DRIVER_PATH.read_text()
+        assert "git_restore" not in source
+        assert '["git", "-C", str(UPSTREAM_SOURCE), "checkout"' not in source
+
+    def test_run_cell_validates_capture_contract(self, tmp_path):
+        runner = _load_path("run_cell_test", RUN_CELL_PATH)
+        tag = "math500_vb4_T3_n4_b2_auto"
+        result_dir = tmp_path / tag
+        result_dir.mkdir()
+        result = {
+            "return_code": 0,
+            "final_accuracy": 50.0,
+            "n_per_problem": 4,
+            "n_logit_batches": 2,
+            "call_stats_present": True,
+        }
+        (result_dir / f"fidelity_{tag}.json").write_text(json.dumps(result))
+        valid, _ = runner.validate_result(tmp_path, "math500", 4, 4, 2, True)
+        assert valid
+
+        result["n_per_problem"] = 3
+        (result_dir / f"fidelity_{tag}.json").write_text(json.dumps(result))
+        valid, detail = runner.validate_result(tmp_path, "math500", 4, 4, 2, True)
+        assert not valid
+        assert "expected 4 paired records" in detail
 
 
 _NEED_UPSTREAM = pytest.mark.skipif(

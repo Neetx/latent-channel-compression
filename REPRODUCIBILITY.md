@@ -1,222 +1,234 @@
-# Reproducibility Guide
+# Reproducing the study locally on an RTX 5070 Ti
 
-This guide is the entrypoint for reproducing the experiments and post-hoc
-analyses behind the write-up. It separates two tasks:
+This is the primary reproduction path for the paper. It starts from a clean clone,
+runs the four published local cells on one 16 GB GPU, and regenerates the answer and
+trajectory tables. Kaggle and Modal are historical independent checks and are
+documented only in the appendix below.
 
-1. **Artifact analysis**: starting from downloaded JSON/NPZ outputs, regenerate
-   tables and figures locally.
-2. **Cloud reruns**: rerun the GPU experiments on Kaggle or Modal to produce new
-   artifacts.
+## What this reproduces
 
-The code is source-visible but not open-source; see `LICENSE`.
+The local experiment is RecursiveMAS at commit `f95d512`, seed 42, three recursive
+rounds, native bf16, and $n=250$ per condition:
 
-## 0. Local Setup
+| cell | sampled ladder | paired greedy capture | measured time |
+|---|---|---|---:|
+| `sequential_light x math500` | REF/8/4/2 bit | REF/INT4 | 6.3 h |
+| `sequential_light x mbppplus` | REF/8/4/2 bit | REF/INT4 | 9.7 h |
+| `sequential_scaled x mbppplus` | REF/8/4/2 bit | REF/INT4 | 9.4 h |
+| `sequential_light x medqa` | REF/8/4/2 bit | REF/INT4 | 11.0 h |
 
-Use Python 3.10+.
+The measured total is about 36 GPU-hours when run sequentially. Times are from the
+published RTX 5070 Ti run and will vary. The light and scaled checkpoints require
+roughly 34 GB of cache; reserve at least 50 GB for checkpoints, outputs, and temporary
+files. Raw NPZ capture size also depends on generated length.
+
+## 1. Required platform
+
+The published configuration was:
+
+- NVIDIA RTX 5070 Ti, 16 GB, compute capability 12.0;
+- Windows 10 with WSL2 Ubuntu 20.04;
+- NVIDIA driver visible inside WSL;
+- Python 3.12;
+- PyTorch 2.9.0+cu128 and the versions pinned in `requirements.txt`.
+
+Another Ampere-or-newer CUDA GPU with native bf16 can be used, but that is a new
+hardware replication rather than an exact reproduction. Pre-Ampere GPUs must use
+fp32 and are not the primary path.
+
+## 2. Clone this repository and the read-only upstream
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+git clone https://github.com/Neetx/latent-channel-compression.git
+cd latent-channel-compression
 
-# Optional but recommended: enables patch tests against real upstream source.
 git clone https://github.com/RecursiveMAS/RecursiveMAS.git external/RecursiveMAS
 git -C external/RecursiveMAS checkout f95d512017fb713e9ac519248fbfd3d270dafd68
+git -C external/RecursiveMAS status --porcelain --untracked-files=no
+```
 
+The last command must print nothing. RecursiveMAS is third-party upstream code. The
+local driver verifies its commit, copies the source into the run directory, patches
+only that disposable copy, and deletes the copy afterward. It never edits or restores
+files in `external/RecursiveMAS`.
+
+## 3. Create the tested Python/CUDA environment
+
+```bash
+python3.12 -m venv .venv
+.venv/bin/python -m pip install --upgrade pip
+
+# Exact CUDA build used by the RTX 5070 Ti run.
+.venv/bin/python -m pip install torch==2.9.0 \
+  --index-url https://download.pytorch.org/whl/cu128
+
+.venv/bin/python -m pip install -r requirements.txt
+```
+
+Choose persistent locations outside the git checkout:
+
+```bash
+export HF_HOME="${HF_HOME:-$HOME/.cache/huggingface}"
+export LCC_RUN_ROOT="${LCC_RUN_ROOT:-$HOME/lcc/runs}"
+export PYTHONDONTWRITEBYTECODE=1
+mkdir -p "$HF_HOME" "$LCC_RUN_ROOT"
+```
+
+Run the complete CPU test suite and GPU sanity check:
+
+```bash
 .venv/bin/python -m pytest tests/ -q
+.venv/bin/python experiments/fidelity_sweep/local_pkg/setup/verify_gpu.py
 ```
 
-The cloud runners pin their own dependencies inside their scripts; local
-`requirements.txt` is for tests and post-hoc analysis.
+The GPU check must report CUDA available, capability `(12, 0)` on the exact target,
+and a successful bf16 matrix multiplication.
 
-## 1. Verify Downloaded Artifacts
-
-Always verify artifacts before analysis:
+## 4. Download and validate the released checkpoints
 
 ```bash
-.venv/bin/python bin/verify_artifacts.py /path/to/artifacts \
-    --manifest /path/to/artifacts/SHA256SUMS.json
+# Sequential-Light (~10 GB) and its adapter manifests.
+.venv/bin/python experiments/fidelity_sweep/local_pkg/setup/download_checkpoints.py
+
+# Sequential-Scaled (~24 GB), with resumable retries.
+.venv/bin/python experiments/fidelity_sweep/local_pkg/setup/download_scaled.py
+
+# Confirm math/code adapter and outer-link resolution.
+.venv/bin/python experiments/fidelity_sweep/local_pkg/setup/preflight_checks.py
 ```
 
-This parses JSON, tests NPZ/ZIP CRCs, and writes a SHA256 manifest. It catches
-interrupted `modal volume get` downloads that leave corrupt `fidelity_logits.npz`
-files on disk.
+Set `HF_TOKEN` only if Hugging Face throttles anonymous downloads. Never store it in
+the repository. All checkpoint repositories are listed explicitly in the setup
+scripts and are resolved through the pinned RecursiveMAS manifest logic.
 
-## 2. Headline Sampled Bit-Rate Ladder
+## 5. Run a cheap end-to-end smoke test first
 
-This is the sampled-decoding Kaggle T4 fp32 result used for the main accuracy
-ladder.
-
-### 2.1 Rerun on Kaggle
-
-Configure Kaggle credentials first. Then create or update the source bundle
-dataset:
+This exercises the source-copy isolation, patch injection, GPU model load, INT4
+quantizer, greedy capture, JSONL output, call statistics, and NPZ output:
 
 ```bash
-./bin/kaggle datasets create \
-    -p experiments/variant_b_ladder_t4_kaggle/dataset_pkg \
-    --dir-mode skip
+.venv/bin/python experiments/fidelity_sweep/local_pkg/fidelity_local.py \
+  --style sequential_light --dataset math500 --bits 4 --t 3 \
+  --n-samples 4 --batch-size 2 --topk 256 --maxpos 128 \
+  --out "$LCC_RUN_ROOT/smoke"
 ```
 
-Replace `<YOUR_KAGGLE_USERNAME>` in generated Kaggle metadata with your username.
-Then run the canonical n=250 ladder:
+Success requires return code 0 and a final line reporting four per-problem records,
+at least one logit batch, and channel statistics. After the run:
 
 ```bash
-./bin/push_kaggle_vb_kernel.sh 0 250 4
-./bin/push_kaggle_vb_kernel.sh 8 250 4
-./bin/push_kaggle_vb_kernel.sh 4 250 4
-./bin/push_kaggle_vb_kernel.sh 2 250 4
+git -C external/RecursiveMAS status --porcelain --untracked-files=no
 ```
 
-Each kernel writes one JSON:
+must still print nothing.
+
+## 6. Reproduce the four local cells
+
+`run_cell.py` is the canonical orchestrator. Each condition runs in a fresh Python
+process. It fails fast on a nonzero child process and validates the result JSON,
+paired-record count, NPZ presence, and INT4 call statistics before continuing.
+
+```bash
+.venv/bin/python experiments/fidelity_sweep/local_pkg/run_cell.py \
+  --style sequential_light --dataset math500 --n 250 \
+  --ladder-batch 16 --cap-batch 2
+
+.venv/bin/python experiments/fidelity_sweep/local_pkg/run_cell.py \
+  --style sequential_light --dataset mbppplus --n 250 \
+  --ladder-batch 16 --cap-batch 2
+
+PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+.venv/bin/python experiments/fidelity_sweep/local_pkg/run_cell.py \
+  --style sequential_scaled --dataset mbppplus --n 250 \
+  --ladder-batch 4 --cap-batch 1
+
+.venv/bin/python experiments/fidelity_sweep/local_pkg/run_cell.py \
+  --style sequential_light --dataset medqa --n 250 \
+  --ladder-batch 16 --cap-batch 2
+```
+
+The output layout is deterministic:
 
 ```text
-phase0g_vb{bits}_n250_b4.json
+$LCC_RUN_ROOT/
+  sequential_light_math500/
+  sequential_light_mbppplus/
+  sequential_scaled_mbppplus/
+  sequential_light_medqa/
 ```
 
-### 2.2 Download and Analyze
+Each cell contains six condition directories, six logs, and
+`cell_manifest.json`. The condition directories contain machine-readable result JSON;
+greedy conditions additionally contain per-problem JSONL and `fidelity_logits.npz`;
+INT4 greedy conditions contain `fidelity_call_stats.json`.
 
-Download each kernel into its own subdirectory:
+## 7. Regenerate the published analyses
+
+### Answer-level table from a fresh run
 
 ```bash
-mkdir -p /tmp/rmas_ladder_outputs
-./bin/kaggle kernels output "<YOUR_KAGGLE_USERNAME>/rmas-vbbaseline-n250-b4" -p /tmp/rmas_ladder_outputs/baseline
-./bin/kaggle kernels output "<YOUR_KAGGLE_USERNAME>/rmas-vb8-n250-b4"        -p /tmp/rmas_ladder_outputs/vb8
-./bin/kaggle kernels output "<YOUR_KAGGLE_USERNAME>/rmas-vb4-n250-b4"        -p /tmp/rmas_ladder_outputs/vb4
-./bin/kaggle kernels output "<YOUR_KAGGLE_USERNAME>/rmas-vb2-n250-b4"        -p /tmp/rmas_ladder_outputs/vb2
-
-.venv/bin/python bin/verify_artifacts.py /tmp/rmas_ladder_outputs \
-    --manifest /tmp/rmas_ladder_outputs/SHA256SUMS.json
-
-.venv/bin/python experiments/variant_b_ladder_t4_kaggle/analysis/analyze_ladder.py \
-    --inputs /tmp/rmas_ladder_outputs \
-    --n-samples 250 \
-    --batch-size 4 \
-    --out experiments/variant_b_ladder_t4_kaggle/analysis/results
+.venv/bin/python \
+  experiments/fidelity_sweep/local_pkg/analysis/compare_cells.py \
+  --run-root "$LCC_RUN_ROOT"
 ```
 
-Expected outputs:
-
-```text
-experiments/variant_b_ladder_t4_kaggle/analysis/results/results.md
-experiments/variant_b_ladder_t4_kaggle/analysis/results/summary.csv
-experiments/variant_b_ladder_t4_kaggle/analysis/results/summary.json
-experiments/variant_b_ladder_t4_kaggle/analysis/results/figures/bit_rate_ladder_n250.png
-```
-
-## 3. Greedy Fidelity Sweep
-
-This is the paired REF-vs-INT4 Modal/Kaggle experiment used for channel fidelity,
-trajectory divergence, matched-prefix logit metrics, and paired bootstrap/TOST.
-The current analyzer pairs only fixed primary generate calls and excludes conditional
-answer retries. It also corrects residual-tail accounting on the top-K union.
-
-### 3.1 Modal A100 Path
-
-For a powered T=3 n=250 comparison:
+With no `--run-root`, the same command analyzes the compact committed JSONLs and
+reproduces the published paired answer table without a GPU:
 
 ```bash
-modal run --detach experiments/fidelity_sweep/modal_pkg/fidelity_modal.py::main \
-    --bits 0 --t 3 --n-samples 250 --batch-size 8
-modal run --detach experiments/fidelity_sweep/modal_pkg/fidelity_modal.py::main \
-    --bits 4 --t 3 --n-samples 250 --batch-size 8
+.venv/bin/python experiments/fidelity_sweep/local_pkg/analysis/compare_cells.py
 ```
 
-For the n=50 T-sweep:
+For a detailed single-cell contingency and TOST, pass the REF and INT4 JSONLs to
+`analysis/flip_churn_tost.py --ref ... --int4 ...`.
+
+### Corrected Tier-2 table from raw local captures
 
 ```bash
-modal run experiments/fidelity_sweep/modal_pkg/fidelity_modal.py::sweep \
-    --t-values 1,2,3,4 --n-samples 50 --batch-size 8
+.venv/bin/python \
+  experiments/fidelity_sweep/local_pkg/analysis/tier2_logit_fidelity.py \
+  --run-root "$LCC_RUN_ROOT"
 ```
 
-Fetch one comparison layout at a time:
+The analyzer pairs only the fixed primary batches and excludes conditional answer
+retries. Local capture is top-K=256 and right-censored at 128 positions. The expected
+table is recorded in REPORT_08 and
+`experiments/fidelity_sweep/local_pkg/results/tier2_logit_fidelity_SUMMARY.md`.
+Raw NPZs are not committed because of their size; exact Tier-2 reproduction therefore
+requires running the capture conditions or obtaining a separately archived checksum
+bundle.
 
-```bash
-mkdir -p /tmp/fid_outputs
-modal volume get rmas-fidelity-out vb0_T3_n250 /tmp/fid_outputs/
-modal volume get rmas-fidelity-out vb4_T3_n250 /tmp/fid_outputs/
-
-.venv/bin/python bin/verify_artifacts.py /tmp/fid_outputs \
-    --manifest /tmp/fid_outputs/SHA256SUMS.json
-
-.venv/bin/python experiments/fidelity_sweep/analysis/analyze.py \
-    --inputs /tmp/fid_outputs \
-    --logit-dir /tmp/fid_outputs \
-    --eps-pp 2.0 \
-    --out experiments/fidelity_sweep/analysis/results_n250_T3
-```
-
-Do not point `analyze.py` at a parent containing multiple runs with the same
-`(bits, T)` such as all-link, inner-only, outer-only, and n=50 together. The
-script now rejects duplicates by default to prevent silent overwrites.
-
-### 3.2 Kaggle T4 Path
-
-When Kaggle quota is available:
-
-```bash
-for T in 1 2 3 4; do
-    ./bin/push_fidelity_kernel.sh 0 $T 50 4
-    ./bin/push_fidelity_kernel.sh 4 $T 50 4
-done
-```
-
-Then download each kernel into one subdirectory and run the same verifier and
-`analyze.py` command as above.
-
-## 4. Local Single-GPU Cross-Cell Extension
-
-The portable local backend is documented in
-[`experiments/fidelity_sweep/local_pkg/README.md`](experiments/fidelity_sweep/local_pkg/README.md).
-It produced four n=250 cells in bf16 on one 16 GB GPU. From the `local_pkg` directory:
-
-```bash
-bash run_step0.sh
-bash run_step1_mbppplus.sh
-bash run_step2_scaled_mbppplus.sh
-python run_cell.py --style sequential_light --dataset medqa \
-  --ladder-batch 16 --cap-batch 2 --n 250
-
-python analysis/flip_churn_tost.py
-python analysis/compare_cells.py
-python analysis/tier2_logit_fidelity.py
-```
-
-Set `LCC_RUN_ROOT` to choose the raw-output directory and `HF_HOME` to choose the
-checkpoint cache. Raw prompts, traces, logs, and `fidelity_logits.npz` are not part
-of the public repository. Compact JSONL records under `local_pkg/results/` are enough
-to reproduce paired answer statistics; Tier-2 requires regenerated or archived NPZs.
-
-## 5. Regenerate Figures and Write-Up
-
-After running the analyses:
+## 8. Rebuild the paper
 
 ```bash
 .venv/bin/python docs/figures/_generate_figures.py
-
 cd writeup
 tectonic main.tex
 ```
 
-`docs/figures/_generate_figures.py` reads
-`experiments/variant_b_ladder_t4_kaggle/analysis/results/summary.json` for the
-headline ladder when present. If that file is absent, it falls back to the
-historical report values and says so in the generated title.
+The paper PDF is committed as `writeup/main.pdf`.
 
-## 6. Known Reproducibility Boundaries
+## 9. Reproducibility boundaries
 
-- Cloud credentials and private Modal/Kaggle volumes are not included.
-- Raw historical cloud outputs are not committed; rerun the jobs or use an
-  external artifact archive with a SHA256 manifest.
-- The RecursiveMAS upstream commit used by this package is pinned to
-  `f95d512017fb713e9ac519248fbfd3d270dafd68` in local instructions. The cloud
-  runners should be kept on that commit for strict reruns.
-- The headline ladder uses sampled decoding and unpaired runs. The fidelity
-  sweep uses greedy decoding and paired runs. Do not merge those baselines.
-- Local Tier-2 captures use top-K=256 and a 128-position window. Divergence is
-  windowed and matched-prefix KL is approximate and selection-conditioned.
-- REPORT_07 cloud KL/divergence values were produced by the legacy all-call/tail
-  estimator. Reanalyze the raw cloud NPZs with the current analyzer before comparing
-  them numerically with the corrected local table.
-- Fake quantization measures information-theoretic channel compression, not
-  wall-clock network bandwidth or latency.
+- The experiment uses fake quantization: it measures the reconstructed vector and
+  task behavior, not serialized network traffic or codec latency.
+- A single seed does not establish formal equivalence or a causal capacity law.
+- MedQA greedy REF is confounded by a first-option bias; use its sampled ladder for
+  task-level interpretation.
+- Matched-prefix KL is approximate and selection-conditioned; it is not
+  teacher-forced full-trajectory KL.
+- Exact stochastic sampled accuracies require the pinned software, checkpoint cache,
+  sample order, and hardware/dtype path above.
+
+## Appendix: historical cloud replications
+
+Kaggle T4 fp32 produced the original Math500 bit-rate ladder (REPORT_06). Modal A100
+fp32 produced the original greedy controls and depth sweep (REPORT_07). They are
+valuable independent hardware checks and document the dtype failures that led to the
+safe local configuration, but they are no longer the primary reproduction path.
+
+Cloud commands and artifact retrieval remain documented in
+`experiments/variant_b_ladder_t4_kaggle/` and
+`experiments/fidelity_sweep/{kernel_pkg,modal_pkg}/`. REPORT_07's historical KL and
+divergence values used the legacy all-call/tail estimator; reanalyze its raw NPZs with
+the current analyzer before comparing them numerically with the corrected local table.

@@ -7,8 +7,9 @@ what tells us whether an apparent loss/gain *asymmetry* is real or just noise. W
 small discordant counts here (single seed, n=250) the honest expectation is that every
 CI straddles 0.5 (no significant asymmetry) and every Δ CI straddles 0.
 
-Reads the committed per-problem JSONLs for the two light cells and (by default) the
-scaled cell from the working cache. Override paths with --scaled-ref/--scaled-int4.
+With no arguments it reads the compact committed JSONLs, so the published answer
+table is reproducible without a GPU. Pass ``--run-root`` to analyze a fresh set of
+cells produced by ``run_cell.py``.
 """
 from __future__ import annotations
 
@@ -20,7 +21,6 @@ import numpy as np
 from scipy.stats import binomtest
 
 LOCAL_PKG = Path(__file__).resolve().parent.parent
-FID = Path.home() / "lcc" / "fid_out"
 
 
 def load(p: Path) -> dict:
@@ -45,6 +45,8 @@ def analyse(label, refp, intp, boot=20000, seed=42):
     ref, intq = load(refp), load(intp)
     keys = sorted(set(ref) & set(intq))
     n = len(keys)
+    if n == 0:
+        raise ValueError(f"no aligned records for {label}: {refp} vs {intp}")
     r = np.array([ref[k] for k in keys], dtype=bool)
     q = np.array([intq[k] for k in keys], dtype=bool)
     loss = int((r & ~q).sum())   # REF correct, INT4 wrong
@@ -70,19 +72,35 @@ def analyse(label, refp, intp, boot=20000, seed=42):
 
 def main():
     ap = argparse.ArgumentParser()
-    s0 = LOCAL_PKG / "results/step0/fidelity"
-    s1 = LOCAL_PKG / "results/step1_mbppplus/fidelity"
-    s3 = LOCAL_PKG / "results/step3_light_medqa/fidelity"
-    ap.add_argument("--scaled-ref", default=str(FID / "mbppplus_vb0_T3_n250_b1_auto/per_problem_mbppplus_vb0_T3_n250_b1_auto.jsonl"))
-    ap.add_argument("--scaled-int4", default=str(FID / "mbppplus_vb4_T3_n250_b1_auto/per_problem_mbppplus_vb4_T3_n250_b1_auto.jsonl"))
+    ap.add_argument(
+        "--run-root", default=None,
+        help="fresh run root containing sequential_{light,scaled}_<dataset>/; "
+             "default: committed compact artifacts",
+    )
     args = ap.parse_args()
 
-    cells = [
-        ("math500  / light", s0/"per_problem_vb0_T3_n250_b2_auto.jsonl",          s0/"per_problem_vb4_T3_n250_b2_auto.jsonl"),
-        ("mbppplus / light", s1/"per_problem_mbppplus_vb0_T3_n250_b2_auto.jsonl",  s1/"per_problem_mbppplus_vb4_T3_n250_b2_auto.jsonl"),
-        ("mbppplus / scaled", Path(args.scaled_ref),                              Path(args.scaled_int4)),
-        ("medqa    / light", s3/"per_problem_medqa_vb0_T3_n250_b2_auto.jsonl",    s3/"per_problem_medqa_vb4_T3_n250_b2_auto.jsonl"),
-    ]
+    if args.run_root:
+        root = Path(args.run_root)
+        def fresh(style, dataset, batch, bits):
+            tag = f"{dataset}_vb{bits}_T3_n250_b{batch}_auto"
+            return root / f"sequential_{style}_{dataset}" / tag / f"per_problem_{tag}.jsonl"
+        cells = [
+            ("math500  / light", fresh("light", "math500", 2, 0), fresh("light", "math500", 2, 4)),
+            ("mbppplus / light", fresh("light", "mbppplus", 2, 0), fresh("light", "mbppplus", 2, 4)),
+            ("mbppplus / scaled", fresh("scaled", "mbppplus", 1, 0), fresh("scaled", "mbppplus", 1, 4)),
+            ("medqa    / light", fresh("light", "medqa", 2, 0), fresh("light", "medqa", 2, 4)),
+        ]
+    else:
+        s0 = LOCAL_PKG / "results/step0/fidelity"
+        s1 = LOCAL_PKG / "results/step1_mbppplus/fidelity"
+        s2 = LOCAL_PKG / "results/step2_scaled_mbppplus/fidelity"
+        s3 = LOCAL_PKG / "results/step3_light_medqa/fidelity"
+        cells = [
+            ("math500  / light", s0/"per_problem_vb0_T3_n250_b2_auto.jsonl", s0/"per_problem_vb4_T3_n250_b2_auto.jsonl"),
+            ("mbppplus / light", s1/"per_problem_mbppplus_vb0_T3_n250_b2_auto.jsonl", s1/"per_problem_mbppplus_vb4_T3_n250_b2_auto.jsonl"),
+            ("mbppplus / scaled", s2/"per_problem_mbppplus_vb0_T3_n250_b1_auto.jsonl", s2/"per_problem_mbppplus_vb4_T3_n250_b1_auto.jsonl"),
+            ("medqa    / light", s3/"per_problem_medqa_vb0_T3_n250_b2_auto.jsonl", s3/"per_problem_medqa_vb4_T3_n250_b2_auto.jsonl"),
+        ]
 
     print(f"{'cell':18} {'REF':>6} {'INT4':>6} {'Δpp':>6} {'Δ 95%CI':>16} "
           f"{'b/c':>7} {'churn%':>7} {'McNemar':>8} {'loss-frac (95% CI)':>22}")

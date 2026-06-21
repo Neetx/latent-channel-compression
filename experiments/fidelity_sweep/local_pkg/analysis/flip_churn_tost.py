@@ -53,6 +53,8 @@ def main() -> None:
     ref, int4 = load(Path(args.ref)), load(Path(args.int4))
     keys = sorted(set(ref) & set(int4))
     n = len(keys)
+    if n == 0:
+        raise SystemExit("no aligned correctness records found; check --ref/--int4 paths")
     r = np.array([ref[k] for k in keys], dtype=bool)
     q = np.array([int4[k] for k in keys], dtype=bool)
 

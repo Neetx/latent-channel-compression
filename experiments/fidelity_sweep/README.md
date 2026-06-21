@@ -74,16 +74,17 @@ dump, not the transient GPU retention.
 
 ## How to run
 
-There are **three backends**, all reusing the identical, unit-tested patch functions in
+There are **three backends** sharing the tested instrumentation functions in
 `kernel_pkg/fidelity_kernel.py`:
-- **Modal A100 fp32** (`modal_pkg/`) — the original primary cloud path.
-- **Kaggle T4 fp32** (`kernel_pkg/`) — free cloud path (weekly quota).
-- **Local single-GPU bf16** (`local_pkg/`) — runs on a 16 GB consumer card (RTX 5070 Ti).
-  This backend completed four cross-task/tier cells; see
-  [`local_pkg/README.md`](local_pkg/README.md) and the canonical
-  [`REPORT_08`](../../docs/reports/08_local_cross_cell_generalization.md).
 
-### Backend A — Modal A100 fp32 (primary; $1/day budget)
+- **Local RTX 5070 Ti bf16** (`local_pkg/`) — the primary four-cell study and
+  reproduction path. It treats RecursiveMAS as read-only and patches a disposable
+  source copy. Start with [`REPRODUCIBILITY.md`](../../REPRODUCIBILITY.md) and
+  [`local_pkg/README.md`](local_pkg/README.md).
+- **Modal A100 fp32** (`modal_pkg/`) — historical independent controls/depth sweep.
+- **Kaggle T4 fp32** (`kernel_pkg/`) — historical independent T4 path.
+
+### Historical backend — Modal A100 fp32
 
 Driver: `modal_pkg/fidelity_modal.py`. A100-40GB runs fp32 natively (~15× faster than
 the T4) and avoids both the bf16 collapse and the Phase 0.F cast artifact. The 9 GB
