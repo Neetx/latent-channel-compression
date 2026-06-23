@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -95,6 +97,73 @@ class TestLocalBackendIsolation:
         valid, detail = runner.validate_result(tmp_path, "math500", 4, 4, 2, True)
         assert not valid
         assert "expected 4 paired records" in detail
+
+    def test_run_cell_resume_skips_completed_conditions(self, tmp_path, monkeypatch):
+        # An interrupted cell must continue from the first incomplete condition: a
+        # condition whose valid result JSON already exists is reused, never rerun.
+        runner = _load_path("run_cell_resume_test", RUN_CELL_PATH)
+
+        def write_valid(out, dataset, bits, n, batch, capture):
+            tag = f"{dataset}_vb{bits}_T3_n{n}_b{batch}_auto"
+            d = out / tag
+            d.mkdir(parents=True, exist_ok=True)
+            result = {"return_code": 0, "final_accuracy": 50.0}
+            if capture:
+                result.update({"n_per_problem": n, "n_logit_batches": 1,
+                               "call_stats_present": bits > 0})
+            (d / f"fidelity_{tag}.json").write_text(json.dumps(result))
+
+        # Pre-seed the two ladder conditions a reboot already finished (b0, b8).
+        for bits in (0, 8):
+            write_valid(tmp_path, "math500", bits, 6, 4, False)
+
+        calls = []
+
+        def fake_run_one(style, dataset, bits, n, batch, capture, logpath, py, out):
+            calls.append(("fidelity" if capture else "ladder", bits))
+            Path(logpath).write_text("accuracy=50.00%\n")
+            write_valid(out, dataset, bits, n, batch, capture)
+            return 0, 0.01, ["stub"]
+
+        monkeypatch.setattr(runner, "run_one", fake_run_one)
+        monkeypatch.setattr(runner, "environment_metadata", lambda: {"stub": True})
+        monkeypatch.setattr(sys, "argv", [
+            "run_cell.py", "--style", "sequential_scaled", "--dataset", "math500",
+            "--n", "6", "--ladder-batch", "4", "--cap-batch", "1",
+            "--out", str(tmp_path), "--resume",
+        ])
+
+        assert runner.main() == 0
+        # b0/b8 reused (not in calls); only the incomplete conditions actually ran.
+        assert ("ladder", 0) not in calls and ("ladder", 8) not in calls
+        assert {("ladder", 4), ("ladder", 2),
+                ("fidelity", 0), ("fidelity", 4)} <= set(calls)
+
+    def test_run_cell_lock_blocks_second_instance(self, tmp_path, monkeypatch):
+        # A second orchestrator for the same cell must abort, not double-run and corrupt
+        # the shared captures / contend for VRAM (the failure we actually hit).
+        runner = _load_path("run_cell_lock_test", RUN_CELL_PATH)
+        (tmp_path / ".run_cell.lock").write_text(str(os.getpid()))  # a LIVE pid holds it
+
+        calls = []
+        monkeypatch.setattr(runner, "run_one",
+                            lambda *a, **k: (calls.append(a), (0, 0.0, ["stub"]))[1])
+        monkeypatch.setattr(runner, "environment_metadata", lambda: {})
+        monkeypatch.setattr(sys, "argv", [
+            "run_cell.py", "--style", "sequential_scaled", "--dataset", "math500",
+            "--out", str(tmp_path), "--n", "6", "--resume",
+        ])
+
+        assert runner.main() == 4
+        assert calls == []  # aborted before running any condition
+
+    def test_run_cell_lock_reclaims_stale(self, tmp_path):
+        runner = _load_path("run_cell_lock_test2", RUN_CELL_PATH)
+        lock = tmp_path / ".run_cell.lock"
+        lock.write_text("999999")  # a PID that does not exist -> stale, reclaimable
+        claimed = runner.claim_cell_lock(tmp_path)
+        assert claimed == lock
+        assert lock.read_text().strip() == str(os.getpid())
 
 
 _NEED_UPSTREAM = pytest.mark.skipif(

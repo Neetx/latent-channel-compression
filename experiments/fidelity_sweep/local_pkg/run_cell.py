@@ -3,14 +3,22 @@
 (style, dataset) cell of the RecursiveMAS × Variant B matrix.
 
 Each condition runs as a separate `fidelity_local.py` subprocess (fresh CUDA context,
-crash isolation, per-run git-restore). The scientific logic lives in the driver; this is
-a portable, repeatable run recipe. Generalises run_step2_scaled_mbppplus.py.
+crash isolation; the driver instruments a disposable upstream copy, never the read-only
+clone). The scientific logic lives in the driver; this is a portable, repeatable run
+recipe. Generalises run_step2_scaled_mbppplus.py.
 
   python run_cell.py --style sequential_light --dataset medqa --ladder-batch 16 --cap-batch 2 --n 250
+
+`--resume` skips any condition that already has a valid result JSON, so an interrupted
+multi-hour cell (e.g. after a reboot) continues from the first incomplete condition
+instead of recomputing finished ones. Skipping is safe because every condition is
+deterministic (seed 42, fixed decoding); a reused condition is byte-identical to a rerun.
 """
 from __future__ import annotations
 
 import argparse
+import atexit
+import errno
 import json
 import os
 import platform
@@ -82,6 +90,55 @@ def validate_result(out: Path, dataset: str, bits: int, n: int, batch: int, capt
     return True, str(path)
 
 
+def _pid_alive(pid: int) -> bool:
+    """True if a process with this PID currently exists (POSIX/WSL)."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # exists but owned by another user
+    except OSError as exc:
+        return exc.errno != errno.ESRCH
+    return True
+
+
+def claim_cell_lock(out: Path) -> Path | None:
+    """Atomically claim a cell's output dir so two orchestrators cannot run it at once.
+    A double-run writes the SAME shared captures (NPZ/JSONL/call_stats) and contends for
+    VRAM, silently corrupting results — this guard prevents that. A stale lock whose
+    recorded PID is gone (e.g. after a reboot or kill) is reclaimed. Returns the lock
+    path on success, or None if a live instance already holds it."""
+    lock = out / ".run_cell.lock"
+    for _ in range(2):
+        try:
+            fd = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.write(fd, str(os.getpid()).encode())
+            os.close(fd)
+            return lock
+        except FileExistsError:
+            try:
+                holder = int(lock.read_text().strip() or "0")
+            except Exception:
+                holder = 0
+            if holder and _pid_alive(holder):
+                return None
+            try:
+                lock.unlink()  # stale: the recorded PID is gone, reclaim it
+            except FileNotFoundError:
+                pass
+    return None
+
+
+def release_cell_lock(lock: Path) -> None:
+    """Remove the lock iff we still own it (best-effort; stale locks self-heal anyway)."""
+    try:
+        if int(lock.read_text().strip() or "0") == os.getpid():
+            lock.unlink()
+    except Exception:
+        pass
+
+
 def run_one(style, dataset, bits, n, batch, capture, logpath, py, out):
     cmd = [py, str(DRIVER), "--style", style, "--dataset", dataset, "--bits", str(bits),
            "--t", "3", "--n-samples", str(n), "--batch-size", str(batch),
@@ -103,12 +160,22 @@ def main() -> int:
     ap.add_argument("--cap-batch", type=int, default=2)
     ap.add_argument("--out", default=None)
     ap.add_argument("--python", default=sys.executable)
+    ap.add_argument("--resume", action="store_true",
+                    help="skip conditions whose valid result JSON already exists "
+                         "(continue an interrupted cell without recomputing finished conditions)")
     args = ap.parse_args()
 
     tag = f"{args.style}_{args.dataset}"
     run_root = Path(os.environ.get("LCC_RUN_ROOT", Path.home() / "lcc" / "runs"))
     out = Path(args.out) if args.out else (run_root / tag)
     out.mkdir(parents=True, exist_ok=True)
+    lock = claim_cell_lock(out)
+    if lock is None:
+        print(f"[abort] another run_cell instance is already active for {out} "
+              f"(lock {out / '.run_cell.lock'}); refusing to double-run, which would "
+              f"corrupt the shared captures and contend for VRAM.", file=sys.stderr)
+        return 4
+    atexit.register(release_cell_lock, lock)
     runs = []
 
     print(f"=== CELL {tag}  n={args.n}  ladder_b={args.ladder_batch}  cap_b={args.cap_batch}  "
@@ -117,6 +184,15 @@ def main() -> int:
     print("### PHASE 1: sampled ladder ###", flush=True)
     for b in (0, 8, 4, 2):
         lp = out / f"ladder_b{b}_n{args.n}.log"
+        if args.resume:
+            valid, detail = validate_result(
+                out, args.dataset, b, args.n, args.ladder_batch, False
+            )
+            if valid:
+                runs.append({"phase": "ladder", "bits": b, "return_code": 0,
+                             "reused": True, "log": str(lp)})
+                print(f"[ladder bits={b}] reuse valid result, skip ({detail})", flush=True)
+                continue
         print(f"[ladder bits={b}] start {time.strftime('%H:%M:%S')}", flush=True)
         rc, dt, cmd = run_one(
             args.style, args.dataset, b, args.n, args.ladder_batch, False, lp,
@@ -139,6 +215,15 @@ def main() -> int:
     print("### PHASE 2: greedy paired fidelity ###", flush=True)
     for b in (0, 4):
         lp = out / f"fidelity_b{b}_n{args.n}.log"
+        if args.resume:
+            valid, detail = validate_result(
+                out, args.dataset, b, args.n, args.cap_batch, True
+            )
+            if valid:
+                runs.append({"phase": "fidelity", "bits": b, "return_code": 0,
+                             "reused": True, "log": str(lp)})
+                print(f"[fidelity bits={b}] reuse valid result, skip ({detail})", flush=True)
+                continue
         print(f"[fidelity bits={b}] start {time.strftime('%H:%M:%S')}", flush=True)
         rc, dt, cmd = run_one(
             args.style, args.dataset, b, args.n, args.cap_batch, True, lp,
