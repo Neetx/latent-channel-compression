@@ -2,7 +2,7 @@
 
 **Updated:** 2026-06-21
 
-**Primary target:** the four-cell local experiment in REPORT_08
+**Primary target:** the five-cell local experiment in REPORT_08
 
 **Historical secondary targets:** Kaggle T4 and Modal A100 runs in REPORT_06/07
 

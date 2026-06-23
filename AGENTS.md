@@ -10,20 +10,22 @@ RecursiveMAS system with TurboQuant Variant B (Haar rotation plus Lloyd--Max sca
 quantization) and measures channel distortion, answer behavior, and greedy
 trajectory drift.
 
-The **primary result** is the four-cell local RTX 5070 Ti study in
+The **primary result** is the five-cell local RTX 5070 Ti study in
 [`docs/reports/08_local_cross_cell_generalization.md`](docs/reports/08_local_cross_cell_generalization.md).
 Kaggle/Modal reports 06--07 are independent historical cloud checks, not the primary
 reproduction path.
 
 Current local findings, n=250, seed 42, T=3:
 
-- sampled REF/8/4/2-bit ladders show no detected monotonic degradation in four cells;
-- clean greedy deltas are +2 pp (Math500/light), 0 pp (MBPP+/light), and -2 pp
-  (MBPP+/scaled), all with 95% intervals spanning zero;
+- sampled REF/8/4/2-bit ladders show no detected monotonic degradation in five cells;
+- clean greedy deltas are +2 pp (Math500/light), -2.4 pp (Math500/scaled), 0 pp
+  (MBPP+/light), and -2 pp (MBPP+/scaled), all with 95% intervals spanning zero;
 - answer churn is 4.4--10% in those clean cells;
-- corrected divergence within 128 positions is 86.4%, 92.8%, 51.2%, and 96.4%;
-- MBPP+/scaled is more trajectory-robust than MBPP+/light, an exploratory tier
-  association rather than a causal capacity law;
+- corrected divergence within 128 positions is 86.4% (Math500/light), 80.4%
+  (Math500/scaled), 92.8% (MBPP+/light), 51.2% (MBPP+/scaled), and 96.4% (MedQA/light);
+- MBPP+/scaled is much more trajectory-robust than MBPP+/light, but this does NOT
+  generalise -- on Math500 the same light->scaled change barely moves divergence
+  (86.4% -> 80.4%) -- so it is a task-specific tier association, not a causal capacity law;
 - MedQA greedy is confounded by a pathological REF first-option bias.
 
 Never call the intervention lossless, formally equivalent, trajectory preserving, or
@@ -60,8 +62,9 @@ export PYTHONDONTWRITEBYTECODE=1
 ```
 
 `run_cell.py` is canonical. Historical `run_step*.sh` wrappers are compatibility
-helpers, not the documented entrypoint. A full four-cell reproduction takes about
-36 sequential GPU-hours and roughly 34 GB of checkpoint cache.
+helpers, not the documented entrypoint. A full five-cell reproduction takes about
+60 sequential GPU-hours and roughly 34 GB of checkpoint cache (scaled math500 alone is
+~25 GPU-hours at batch 4 ladder / batch 1 capture; use `--resume` to survive a reboot).
 
 Post-hoc checks:
 

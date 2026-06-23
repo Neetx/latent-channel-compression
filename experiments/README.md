@@ -10,7 +10,7 @@ This folder contains **only the scripts needed to reproduce the paper's results*
 | `solver_diagnostic/` | Solver-alone math500 accuracy (proves checkpoint is intact: 83% on n=100, greedy) | [report 05 §1.1](../docs/reports/05_hardware_root_cause.md) |
 | `baseline_a100_modal/` | Upstream `run.py` pristine on Modal A100 bf16, reproduces paper baseline (84-86% on math500) | [report 05 §1.3](../docs/reports/05_hardware_root_cause.md) |
 | `variant_b_ladder_t4_kaggle/` | Historical independent T4 fp32 Math500 ladder | [report 06](../docs/reports/06_variant_b_in_loop_HEADLINE.md) |
-| `fidelity_sweep/` | **PRIMARY** local RTX 5070 Ti four-cell study plus historical Kaggle/Modal backends | [report 08](../docs/reports/08_local_cross_cell_generalization.md), `fidelity_sweep/local_pkg/` |
+| `fidelity_sweep/` | **PRIMARY** local RTX 5070 Ti five-cell study plus historical Kaggle/Modal backends | [report 08](../docs/reports/08_local_cross_cell_generalization.md), `fidelity_sweep/local_pkg/` |
 
 ## What was removed (and where its finding lives)
 

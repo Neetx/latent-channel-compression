@@ -1,0 +1,16 @@
+REF  = per_problem_math500_vb0_T3_n250_b1_auto.jsonl
+INT4 = per_problem_math500_vb4_T3_n250_b1_auto.jsonl
+paired n=250   REF acc=87.60%   INT4 acc=85.20%   Δ=-2.40 pp
+
+2x2 contingency:
+  both correct=205  REF✓/INT4✗(loss)=14  REF✗/INT4✓(gain)=8  both wrong=23
+
+FLIP-CHURN:
+  flipped=22 (8.8% of problems)  losses=14 gains=8 net=-6
+  churn (22) = 3.7x the net change (6)
+
+Paired bootstrap (B=20000, seed=42):
+  Δ=-2.40 pp  95% CI [-6.00,+1.20]  90% CI [-5.60,+0.80]
+  TOST @±2pp: INCONCLUSIVE
+
+McNemar exact: discordant=22 (b=14, c=8)  two-sided p=0.286

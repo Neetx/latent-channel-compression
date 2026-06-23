@@ -76,6 +76,7 @@ def main() -> int:
 
     cells = [
         ("math500 / light", "light", "math500", 2),
+        ("math500 / scaled", "scaled", "math500", 1),
         ("mbppplus / light", "light", "mbppplus", 2),
         ("mbppplus / scaled", "scaled", "mbppplus", 1),
         ("medqa / light", "light", "medqa", 2),

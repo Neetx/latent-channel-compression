@@ -2,7 +2,7 @@
 
 ## Read order for newcomers
 
-1. **[reports/08_local_cross_cell_generalization.md](reports/08_local_cross_cell_generalization.md)** — primary four-cell RTX 5070 Ti result
+1. **[reports/08_local_cross_cell_generalization.md](reports/08_local_cross_cell_generalization.md)** — primary five-cell RTX 5070 Ti result
 2. **[RESEARCH.md](RESEARCH.md)** — current claims, method, limits, and next experiments
 3. **[REPRODUCIBILITY.md](../REPRODUCIBILITY.md)** — clean-clone local reproduction
 4. **[reports/05_hardware_root_cause.md](reports/05_hardware_root_cause.md)** — why pre-Ampere GPUs collapse

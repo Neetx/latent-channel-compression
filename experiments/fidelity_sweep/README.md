@@ -77,7 +77,7 @@ dump, not the transient GPU retention.
 There are **three backends** sharing the tested instrumentation functions in
 `kernel_pkg/fidelity_kernel.py`:
 
-- **Local RTX 5070 Ti bf16** (`local_pkg/`) — the primary four-cell study and
+- **Local RTX 5070 Ti bf16** (`local_pkg/`) — the primary five-cell study and
   reproduction path. It treats RecursiveMAS as read-only and patches a disposable
   source copy. Start with [`REPRODUCIBILITY.md`](../../REPRODUCIBILITY.md) and
   [`local_pkg/README.md`](local_pkg/README.md).

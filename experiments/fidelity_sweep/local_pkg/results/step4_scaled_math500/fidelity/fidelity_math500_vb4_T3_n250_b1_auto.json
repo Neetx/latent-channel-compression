@@ -1,0 +1,23 @@
+{
+  "config": {
+    "bits": 4,
+    "t": 3,
+    "n_samples": 250,
+    "batch_size": 1,
+    "dataset": "math500",
+    "dtype": "auto",
+    "capture": true,
+    "links": "all",
+    "config_tag": "math500_vb4_T3_n250_b1_auto",
+    "seed": 42,
+    "decoding": "greedy",
+    "upstream_commit": "f95d512017fb713e9ac519248fbfd3d270dafd68"
+  },
+  "final_accuracy": 85.2,
+  "return_code": 0,
+  "run_seconds": 23713.9,
+  "n_per_problem": 250,
+  "n_per_problem_with_correct": 250,
+  "n_logit_batches": 290,
+  "call_stats_present": true
+}

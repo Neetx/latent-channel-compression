@@ -1,13 +1,13 @@
 # REPORT 08 — Local cross-cell replication and tier-associated trajectory robustness
 
-**Date:** 2026-06-19 to 2026-06-21  
+**Date:** 2026-06-19 to 2026-06-24  
 **Hardware:** NVIDIA RTX 5070 Ti 16 GB (Blackwell, sm_120), native bf16  
 **Backend:** `experiments/fidelity_sweep/local_pkg/`  
 **Upstream:** RecursiveMAS commit `f95d512017fb713e9ac519248fbfd3d270dafd68`  
 **Protocol:** seed 42, `num_recursive_rounds=3`, Variant B on all inner and outer
 links; sampled bit-rate ladder plus paired greedy REF/INT4 capture  
-**Status:** four cells complete; Tier-2 analysis corrected to exclude conditional
-answer-retry calls
+**Status:** five cells complete — the 2×2 {math500, mbppplus} × {light, scaled} plus
+MedQA/light; Tier-2 analysis corrected to exclude conditional answer-retry calls
 
 ---
 
@@ -15,7 +15,7 @@ answer-retry calls
 
 The original math500 / Sequential-Light result reproduces on a consumer Blackwell
 GPU in native bf16, and aggregate answer robustness extends to code and to the larger
-Sequential-Scaled constellation. Across the three clean math/code cells, sampled
+Sequential-Scaled constellation. Across the four clean math/code cells, sampled
 bit-rate ladders show no monotonic degradation from 8 to 2 bits, and paired greedy
 accuracy deltas are small and non-significant. Individual correctness outcomes still
 change in 4.4--10% of problems.
@@ -24,10 +24,13 @@ The corrected top-K trajectory analysis finds a large same-task tier contrast on
 MBPP+: divergence within the first 128 captured positions is 92.8% for
 Sequential-Light and 51.2% for Sequential-Scaled, despite the same mean per-call
 channel cosine (0.9953). This is strong evidence that the scaled constellation is
-more trajectory-robust in this cell. It is **not yet a causal law of model capacity**:
-the tiers differ in models, tokenizers, adapters, hidden dimensions, generation
-lengths, and logit margins, and only one seed and one same-task tier contrast have
-been measured.
+more trajectory-robust in this cell. **It does not generalize across tasks, however:**
+completing the 2×2 with Sequential-Scaled × math500 shows that the same light→scaled
+change on math500 barely moves divergence (86.4% → 80.4%) and actually *raises*
+matched-prefix KL (0.079 → 0.147). The MBPP+ gap is therefore a task-and-tier-conditioned
+association, **not yet a causal law of model capacity**: the tiers differ in models,
+tokenizers, adapters, hidden dimensions, generation lengths, and logit margins; only one
+seed has been measured; and the contrast's sign and magnitude depend on the task.
 
 MedQA exposes a separate methodological failure mode. Under greedy decoding the weak
 unquantized REF develops a strong first-option bias; INT4 acts like dither and raises
@@ -58,6 +61,7 @@ All cells use `n=250`. Values are accuracy percentages for REF / 8 / 4 / 2 bits.
 | cell | REF | 8-bit | 4-bit | 2-bit | reading |
 |---|---:|---:|---:|---:|---|
 | math500 / light | 77.6 | 76.0 | 78.8 | 78.0 | flat around the local baseline |
+| math500 / scaled | 82.8 | 85.6 | 84.0 | 84.8 | flat at a high baseline |
 | mbppplus / light | 32.8 | 33.6 | 38.8 | 34.8 | no monotonic degradation; low-baseline floor |
 | mbppplus / scaled | 70.8 | 73.6 | 72.0 | 71.2 | flat at a high baseline |
 | medqa / light | 34.4 | 26.4 | 32.8 | 30.0 | scattered; no bit-rate dose response |
@@ -70,14 +74,16 @@ appropriate statement; the ladders do not by themselves establish equivalence.
 | cell | REF | INT4 | delta pp (95% bootstrap CI) | losses/gains | churn | McNemar p |
 |---|---:|---:|:---:|:---:|---:|---:|
 | math500 / light | 76.8 | 78.8 | +2.0 [-2.0,+6.0] | 10/15 | 10.0% | 0.42 |
+| math500 / scaled | 87.6 | 85.2 | -2.4 [-6.0,+1.2] | 14/8 | 8.8% | 0.29 |
 | mbppplus / light | 36.4 | 36.4 | 0.0 [-4.0,+4.0] | 12/12 | 9.6% | 1.00 |
 | mbppplus / scaled | 74.4 | 72.4 | -2.0 [-4.8,+0.4] | 8/3 | 4.4% | 0.23 |
 | medqa / light | 21.2 | 36.4 | +15.2 [+8.8,+21.6] | 19/57 | 30.4% | <0.001 |
 
-For the three clean math/code cells, every delta CI straddles zero and every exact
+For the four clean math/code cells, every delta CI straddles zero and every exact
 McNemar test is non-significant. The result is aggregate answer robustness with real
 per-problem churn, not bit-exact preservation and not formal equivalence at a
-pre-specified ±2 pp margin.
+pre-specified ±2 pp margin. The two scaled cells both lean slightly negative (-2.0,
+-2.4 pp) but neither is statistically resolved.
 
 ### MedQA greedy confound
 
@@ -113,6 +119,7 @@ The corrected analysis:
 | cell | divergence within 128 | common prefix | matched-prefix KL (95% CI) | JS | channel cosine |
 |---|:---:|:---:|:---:|:---:|:---:|
 | math500 / light | 86.4% | 53.7 | 0.079 [0.043,0.124] | 0.009 | 0.9952 |
+| math500 / scaled | 80.4% | 54.6 | 0.147 [0.072,0.251] | 0.013 | 0.9953 |
 | mbppplus / light | 92.8% | 35.8 | 0.113 [0.078,0.156] | 0.015 | 0.9953 |
 | **mbppplus / scaled** | **51.2%** | **65.7** | **0.059 [0.031,0.092]** | **0.003** | 0.9953 |
 | medqa / light | 96.4% | 32.4 | 0.045 [0.030,0.062] | 0.005 | 0.9952 |
@@ -121,6 +128,28 @@ The divergence contrast on MBPP+ is too large to be explained by the few exclude
 retry calls. The channel cosine is almost identical, but cosine is only an average
 geometric distortion measure; it does not establish that the perturbations are
 equivalent relative to the two systems' token-decision boundaries.
+
+**Crucially, the contrast is task-specific.** The MBPP+ light→scaled change nearly
+halves divergence (92.8% → 51.2%), but the math500 light→scaled change moves it only
+86.4% → 80.4%, leaves the common prefix essentially flat (53.7 → 54.6), and *raises*
+matched-prefix KL (0.079 → 0.147). A general "scaled is more trajectory-robust" law
+would predict a comparable drop on math500; it does not appear. This is the strongest
+single reason the MBPP+ gap must be read as a task-and-tier association rather than a
+capacity law, and it sharpens the mechanism question: what about the MBPP+ task (output
+length, answer redundancy, token margins) makes the scaled constellation absorb the same
+channel distortion so differently there but not on math500?
+
+A length-censored first-divergence hazard analysis rules out generation length as that
+explanation (`analysis/divergence_hazard.py`,
+`results/divergence_hazard_SUMMARY.md`). Treating first-divergence as a right-censored
+survival process — observing each problem only while both sequences still generate real
+tokens — shows that MBPP+/scaled is the *only* cell that finishes early (median 117
+tokens, 60% under the 128 window), yet at position 25, before censoring matters, it has
+diverged on only 15.4% of problems versus 50.0% for MBPP+/light (early per-position
+hazard ~4x lower). On math500 the tiers are indistinguishable that early (scaled even
+slightly higher, 38.4% versus 32.4%), so its small full-window gap is a late-position
+effect. The MBPP+ contrast is thus a genuine early, per-token effect, not an artifact of
+the shorter scaled-code generations.
 
 Matched-prefix KL is less robust than divergence. It is a top-K approximation,
 conditions on trajectories that have not yet diverged, averages over variable-length
@@ -164,7 +193,10 @@ Key files:
 
 ## 6. Next experiments implied by this report
 
-1. Complete the tier contrast with Sequential-Scaled × math500.
+1. ~~Complete the tier contrast with Sequential-Scaled × math500.~~ **Done in this
+   report:** the math500 tier contrast is small (86.4% → 80.4%), so the MBPP+ gap is
+   task-specific. The priority shifts from "measure more tiers" to "explain the MBPP+
+   gap" — items 3–4 below.
 2. Repeat MBPP+ light/scaled at 3--5 seeds and pool paired discordances.
 3. Compute output-length distributions and a per-token first-divergence hazard with
    right-censoring.

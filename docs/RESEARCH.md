@@ -1,7 +1,8 @@
 # Research specification and current evidence
 
-**Status (2026-06-21):** primary four-cell RTX 5070 Ti study complete; independent
-cloud validation complete; causal and teacher-forced follow-ups open.
+**Status (2026-06-24):** primary five-cell RTX 5070 Ti study complete (the 2×2
+{math500, mbppplus} × {light, scaled} plus MedQA/light); independent cloud validation
+complete; causal and teacher-forced follow-ups open.
 
 ## Research question
 
@@ -18,16 +19,18 @@ It does not yet implement or evaluate the full QJL inner-product residual.
 1. On RecursiveMAS `sequential_light x math500`, sampled answer accuracy shows no
    detected degradation from 8 to 2 bits per coordinate (nominal 4x-16x payload
    compression) at n=250.
-2. The same flat sampled pattern appears locally on light MBPP+, scaled MBPP+, and
-   light MedQA. Paired greedy estimates for the non-confounded cells are +2, 0, and
-   -2 percentage points, with confidence intervals spanning zero.
+2. The same flat sampled pattern appears locally on scaled math500, light MBPP+,
+   scaled MBPP+, and light MedQA. Paired greedy estimates for the four non-confounded
+   cells are +2.0, -2.4, 0.0, and -2.0 percentage points, with confidence intervals
+   spanning zero.
 3. Aggregate accuracy robustness is not trajectory identity. Individual answer churn
-   is 4.4-10% in the three usable paired cells, and 51.2-92.8% of greedy primary
+   is 4.4-10% in the four usable paired cells, and 51.2-92.8% of greedy primary
    sequences diverge within the first 128 captured positions.
-4. On the same MBPP+ task, the scaled tier is substantially more trajectory-robust
-   than the light tier (51.2% vs 92.8% windowed divergence; matched-prefix KL 0.059
-   vs 0.113 nats). This is an exploratory tier association, not a causal model-size
-   law.
+4. On the MBPP+ task, the scaled tier is substantially more trajectory-robust than the
+   light tier (51.2% vs 92.8% windowed divergence; matched-prefix KL 0.059 vs 0.113
+   nats). On math500, however, the same light→scaled change is small (80.4% vs 86.4%
+   divergence, KL 0.147 vs 0.079), so the contrast is **task-specific**. This is an
+   exploratory tier association, not a causal model-size law.
 5. Light-MedQA greedy REF is pathologically biased toward option A. Its +15.2 pp
    INT4 delta is a diagnostic failure case, not evidence that compression improves
    medicine performance; sampled decoding is the valid task-level evidence.
@@ -43,6 +46,7 @@ at the tested sample sizes" and "tier-associated trajectory robustness."
 | cell | sampled ladder REF/8/4/2 bit | greedy REF/INT4 | delta (95% CI) | churn |
 |---|---:|---:|---:|---:|
 | math500 / light | 77.6 / 76.0 / 78.8 / 78.0 | 76.8 / 78.8 | +2.0 pp [-2.0,+6.0] | 10.0% |
+| math500 / scaled | 82.8 / 85.6 / 84.0 / 84.8 | 87.6 / 85.2 | -2.4 pp [-6.0,+1.2] | 8.8% |
 | mbppplus / light | 32.8 / 33.6 / 38.8 / 34.8 | 36.4 / 36.4 | 0.0 pp [-4.0,+4.0] | 9.6% |
 | mbppplus / scaled | 70.8 / 73.6 / 72.0 / 71.2 | 74.4 / 72.4 | -2.0 pp [-4.8,+0.4] | 4.4% |
 | medqa / light | 34.4 / 26.4 / 32.8 / 30.0 | 21.2 / 36.4 | +15.2 pp [+8.8,+21.6] | 30.4% |
@@ -56,6 +60,7 @@ single-seed n=250 run cannot establish a rate effect.
 | cell | divergence in 128-token window | common prefix | KL on matched prefix | channel cosine |
 |---|---:|---:|---:|---:|
 | math500 / light | 86.4% | 53.7 | 0.079 | 0.9952 |
+| math500 / scaled | 80.4% | 54.6 | 0.147 | 0.9953 |
 | mbppplus / light | 92.8% | 35.8 | 0.113 | 0.9953 |
 | mbppplus / scaled | 51.2% | 65.7 | 0.059 | 0.9953 |
 | medqa / light | 96.4% | 32.4 | 0.045 | 0.9952 |
@@ -70,7 +75,7 @@ capture used top-K=256 and at most 128 positions.
 ### System and intervention
 
 - System: RecursiveMAS, pinned at commit `f95d512`.
-- Primary style: `sequential_light`; one scaled MBPP+ contrast uses
+- Primary style: `sequential_light`; two scaled contrasts (MBPP+ and math500) use
   `sequential_scaled`.
 - Injection sites: all inner and outer cross-model adapters.
 - REF: unchanged bf16/fp32 channel (`bits=0`).
@@ -142,7 +147,9 @@ NPZ captures and logs are regenerated rather than committed.
 
 ## Next experiments
 
-1. Repeat light/scaled MBPP+ at 3-5 independent seeds and complete scaled math500.
+1. Repeat light/scaled MBPP+ at 3-5 independent seeds. (Scaled math500 is done: it
+   showed the MBPP+ tier gap is task-specific, so seed replication of MBPP+ is the
+   priority, not more tiers.)
 2. Implement teacher-forced aligned logit fidelity with token-margin diagnostics.
 3. Sweep 2/3/4/6/8 bits and add an unrotated scalar baseline.
 4. Implement and ablate the QJL residual.

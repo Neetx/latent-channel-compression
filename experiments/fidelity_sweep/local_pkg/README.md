@@ -1,6 +1,6 @@
 # Primary local RTX 5070 Ti backend
 
-This directory contains the primary execution path for the four-cell study in
+This directory contains the primary execution path for the five-cell study in
 REPORT_08. The exact clean-clone environment and full commands are in the root
 [`REPRODUCIBILITY.md`](../../../REPRODUCIBILITY.md); this file documents the backend
 contract for maintainers.
@@ -85,7 +85,7 @@ and 1 with `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`.
 # Recompute the published answer table from committed compact artifacts.
 .venv/bin/python experiments/fidelity_sweep/local_pkg/analysis/compare_cells.py
 
-# Analyze a newly completed four-cell run.
+# Analyze a newly completed five-cell run.
 .venv/bin/python experiments/fidelity_sweep/local_pkg/analysis/compare_cells.py \
   --run-root "$LCC_RUN_ROOT"
 .venv/bin/python experiments/fidelity_sweep/local_pkg/analysis/tier2_logit_fidelity.py \

@@ -1,10 +1,10 @@
 # Roadmap
 
-## Current result (2026-06-21)
+## Current result (2026-06-24)
 
 Variant B, the data-oblivious TurboQuant MSE core used in this repository,
 compresses RecursiveMAS latent messages by 4x-16x with no detected monotonic
-accuracy degradation in the four completed local cells. The strongest supported
+accuracy degradation in the five completed local cells. The strongest supported
 description is:
 
 > Aggregate answer accuracy is robust at the tested sample sizes, while individual
@@ -22,6 +22,7 @@ and the upstream RecursiveMAS checkout pinned at `f95d512`.
 | cell | sampled REF/INT4 | greedy REF/INT4 | paired delta (95% CI) | answer churn |
 |---|---:|---:|---:|---:|
 | math500 / light | 77.6 / 78.8 | 76.8 / 78.8 | +2.0 pp [-2.0,+6.0] | 10.0% |
+| math500 / scaled | 82.8 / 84.0 | 87.6 / 85.2 | -2.4 pp [-6.0,+1.2] | 8.8% |
 | mbppplus / light | 32.8 / 32.8 | 36.4 / 36.4 | 0.0 pp [-4.0,+4.0] | 9.6% |
 | mbppplus / scaled | 70.8 / 72.0 | 74.4 / 72.4 | -2.0 pp [-4.8,+0.4] | 4.4% |
 | medqa / light | 34.4 / 32.8 | 21.2 / 36.4 | +15.2 pp [+8.8,+21.6] | 30.4% |
@@ -40,16 +41,35 @@ double-counting union-token mass in the residual tail.
 | cell | diverged within window | mean common prefix / 128 | matched-prefix KL (nats) | channel cosine |
 |---|---:|---:|---:|---:|
 | math500 / light | 86.4% | 53.7 | 0.079 | 0.9952 |
+| math500 / scaled | 80.4% | 54.6 | 0.147 | 0.9953 |
 | mbppplus / light | 92.8% | 35.8 | 0.113 | 0.9953 |
 | mbppplus / scaled | 51.2% | 65.7 | 0.059 | 0.9953 |
 | medqa / light | 96.4% | 32.4 | 0.045 | 0.9952 |
 
-The same-task MBPP comparison is the cleanest observation: the scaled tier is much
-more trajectory-robust than the light tier under nearly identical measured channel
-cosine. This is a tier association, not yet a causal capacity law: architecture,
-checkpoint family, baseline competence, output length, and token margins also change.
-Matched-prefix KL is approximate and selection-conditioned; teacher forcing is needed
-for a position-aligned causal measurement.
+The same-task MBPP comparison is the cleanest single observation: on mbppplus the scaled
+tier is much more trajectory-robust than light (92.8% -> 51.2% divergence, common prefix
+35.8 -> 65.7) under nearly identical measured channel cosine. **It does not generalise,
+though:** on math500 the same light->scaled change barely moves divergence (86.4% ->
+80.4%), leaves the prefix essentially flat (53.7 -> 54.6), and the matched-prefix KL
+actually *rises* (0.079 -> 0.147). So the effect is a task-and-tier-conditioned
+association, not a causal capacity law: architecture, checkpoint family, baseline
+competence, output length, and token margins all change too, and the sign/magnitude of the
+contrast depends on the task. Matched-prefix KL is approximate and selection-conditioned;
+teacher forcing is needed for a position-aligned causal measurement. The two scaled cells
+completing the 2x2 are `results/step2_scaled_mbppplus/` and `results/step4_scaled_math500/`.
+
+A length-censored first-divergence hazard analysis
+([`results/divergence_hazard_SUMMARY.md`](experiments/fidelity_sweep/local_pkg/results/divergence_hazard_SUMMARY.md),
+`analysis/divergence_hazard.py`) confirms the cross-task difference is **not** a
+generation-length artifact. Only MBPP+/scaled finishes early (median 117 tokens, 60% under
+the 128 window); the other cells run to the cap. Yet at position 25 — before censoring
+matters — MBPP+/scaled has diverged on only 15.4% of problems versus 50.0% for MBPP+/light
+(early per-position hazard 0.0066 versus 0.0271, ~4x), while on Math500 the tiers are
+indistinguishable early and scaled diverges slightly *more* (38.4% versus 32.4%). The
+Math500 full-window "advantage" (80.4% versus 86.4%) is therefore a late-position effect,
+and the MBPP+ contrast is a genuine early, per-token effect. The first-divergence-hazard
+part of the closure-package mechanism test is done for the single-seed captures; the
+teacher-forced and multi-seed parts remain.
 
 Canonical details and artifact provenance are in
 [`docs/reports/08_local_cross_cell_generalization.md`](docs/reports/08_local_cross_cell_generalization.md).

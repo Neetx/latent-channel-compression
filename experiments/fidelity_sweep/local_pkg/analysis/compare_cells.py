@@ -86,6 +86,7 @@ def main():
             return root / f"sequential_{style}_{dataset}" / tag / f"per_problem_{tag}.jsonl"
         cells = [
             ("math500  / light", fresh("light", "math500", 2, 0), fresh("light", "math500", 2, 4)),
+            ("math500  / scaled", fresh("scaled", "math500", 1, 0), fresh("scaled", "math500", 1, 4)),
             ("mbppplus / light", fresh("light", "mbppplus", 2, 0), fresh("light", "mbppplus", 2, 4)),
             ("mbppplus / scaled", fresh("scaled", "mbppplus", 1, 0), fresh("scaled", "mbppplus", 1, 4)),
             ("medqa    / light", fresh("light", "medqa", 2, 0), fresh("light", "medqa", 2, 4)),
@@ -95,8 +96,10 @@ def main():
         s1 = LOCAL_PKG / "results/step1_mbppplus/fidelity"
         s2 = LOCAL_PKG / "results/step2_scaled_mbppplus/fidelity"
         s3 = LOCAL_PKG / "results/step3_light_medqa/fidelity"
+        s4 = LOCAL_PKG / "results/step4_scaled_math500/fidelity"
         cells = [
             ("math500  / light", s0/"per_problem_vb0_T3_n250_b2_auto.jsonl", s0/"per_problem_vb4_T3_n250_b2_auto.jsonl"),
+            ("math500  / scaled", s4/"per_problem_math500_vb0_T3_n250_b1_auto.jsonl", s4/"per_problem_math500_vb4_T3_n250_b1_auto.jsonl"),
             ("mbppplus / light", s1/"per_problem_mbppplus_vb0_T3_n250_b2_auto.jsonl", s1/"per_problem_mbppplus_vb4_T3_n250_b2_auto.jsonl"),
             ("mbppplus / scaled", s2/"per_problem_mbppplus_vb0_T3_n250_b1_auto.jsonl", s2/"per_problem_mbppplus_vb4_T3_n250_b1_auto.jsonl"),
             ("medqa    / light", s3/"per_problem_medqa_vb0_T3_n250_b2_auto.jsonl", s3/"per_problem_medqa_vb4_T3_n250_b2_auto.jsonl"),
@@ -118,7 +121,8 @@ def main():
     print("- math500 / mbppplus (light + scaled): every Δ 95% CI straddles 0 and every")
     print("  McNemar is non-significant — no significant accuracy effect, no significant")
     print("  loss/gain asymmetry. Single seed, 11-25 discordants: the per-cell directions")
-    print("  (+2 / 0 / -2) are within noise. The faint scaled -2pp needs power to resolve.")
+    print("  (+2.0 / -2.4 / 0.0 / -2.0) are within noise. Both scaled cells lean slightly")
+    print("  negative but neither resolves; a faint INT4 cost would need more power.")
     print("- medqa is the LONE significant cell (Δ=+15pp, p<0.001) but is CONFOUNDED: under")
     print("  greedy the unquantized REF develops a strong 'A'-bias (picks A ~46% vs ~25%")
     print("  expected) and scores 21.2%, while the quantizer's dither breaks the bias (36.4%).")

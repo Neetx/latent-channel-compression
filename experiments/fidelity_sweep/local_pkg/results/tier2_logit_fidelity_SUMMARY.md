@@ -15,6 +15,7 @@ measurements.
 | cell | divergence within 128 | common prefix | KL nats (95% CI) | JS | channel cosine |
 |---|:---:|:---:|:---:|:---:|:---:|
 | math500 / light | 86.4% | 53.7 | 0.079 [0.043, 0.124] | 0.009 | 0.9952 |
+| math500 / scaled | 80.4% | 54.6 | 0.147 [0.072, 0.251] | 0.013 | 0.9953 |
 | mbppplus / light | 92.8% | 35.8 | 0.113 [0.078, 0.156] | 0.015 | 0.9953 |
 | **mbppplus / scaled** | **51.2%** | **65.7** | **0.059 [0.031, 0.092]** | **0.003** | 0.9953 |
 | medqa / light | 96.4% | 32.4 | 0.045 [0.030, 0.062] | 0.005 | 0.9952 |
@@ -29,17 +30,20 @@ non-diverged sequence is censored at its captured length, at most 128 positions.
    quantizer. This is a consistency check; equal mean cosine does not imply equal
    semantic perturbations relative to each model's decision boundary.
 
-2. **The same-task light/scaled contrast is large and survives retry removal.** On
-   mbppplus, divergence within the capture window falls from 92.8% to 51.2%, while
-   the common prefix rises from 35.8 to 65.7 positions. Matched-prefix KL is also
-   lower (0.113 to 0.059), although KL is a less stable, selection-conditioned
-   estimator than divergence.
+2. **The same-task light/scaled contrast is large on mbppplus but task-specific.** On
+   mbppplus, divergence within the capture window falls from 92.8% (light) to 51.2%
+   (scaled), the common prefix rises from 35.8 to 65.7 positions, and matched-prefix KL
+   falls (0.113 to 0.059). **On math500 the same light→scaled change is small:** divergence
+   86.4% → 80.4%, common prefix essentially flat (53.7 → 54.6), and KL actually *rises*
+   (0.079 → 0.147). The large mbppplus gap therefore does not generalize across tasks.
 
-3. **Interpretation: tier-associated robustness, not yet a causal capacity law.**
+3. **Interpretation: task-specific tier association, not a causal capacity law.**
    Sequential-Light and Sequential-Scaled differ in models, tokenizers, adapters,
-   hidden dimensions, output lengths, and logit margins as well as parameter count.
-   The result therefore suggests that the scaled system is more trajectory-robust;
-   it does not yet prove that model capacity itself causes the difference.
+   hidden dimensions, output lengths, and logit margins as well as parameter count, and
+   the contrast's sign/magnitude depends on the task. A general capacity law would predict
+   a comparable divergence drop on math500; none appears. The result suggests the scaled
+   system is more trajectory-robust *on mbppplus*; it does not prove that model capacity
+   itself causes the difference.
 
 4. **The divergence metric is windowed and length-dependent.** “51.2% divergence”
    means 128-position-window divergence, not full-generation divergence. Shorter
@@ -53,7 +57,7 @@ non-diverged sequence is censored at its captured length, at most 128 positions.
 
 ## Relationship to the answer-level results
 
-Across the three clean math/code cells, aggregate accuracy deltas are small and not
+Across the four clean math/code cells, aggregate accuracy deltas are small and not
 statistically distinguishable from zero, while 4.4--10% of individual correctness
 outcomes flip. This is **aggregate answer robustness with per-problem churn**, not
 bit-exact answer preservation. MedQA's greedy +15.2 pp result is excluded from that
@@ -62,8 +66,9 @@ claim because its REF is pathological; its sampled ladder is the appropriate res
 The defensible current headline is:
 
 > Aggregate answer accuracy is robust in the clean cells, while trajectory stability
-> varies strongly by system tier; on mbppplus the scaled constellation is much less
-> likely to diverge within the first 128 positions than the light constellation.
+> varies by system tier *and task*: on mbppplus the scaled constellation is much less
+> likely to diverge within the first 128 positions than light, but on math500 the same
+> tier change is small — so the contrast is a task-specific association, not a capacity law.
 
 ## Required follow-up before a mechanistic claim
 
