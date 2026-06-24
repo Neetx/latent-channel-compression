@@ -121,6 +121,20 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
+def build_config_tag(dataset, bits, t, n_samples, batch_size, dtype,
+                     quantizer_seed=42, links="all") -> str:
+    """Single source of truth for a condition's directory/file tag. The quantizer seed
+    and the link-ablation setting append optional suffixes; seed 42 with all links keeps
+    the original tag, so prior results and analyzers keep resolving unchanged. Orchestrators
+    (run_rotation_matrix / run_links_ablation) and analyzers must use this exact tag."""
+    tag = f"{dataset}_vb{bits}_T{t}_n{n_samples}_b{batch_size}_{dtype}"
+    if quantizer_seed != 42:
+        tag += f"_qs{quantizer_seed}"
+    if links != "all":
+        tag += f"_l{links[0]}"  # _li / _lo for inner/outer-only ablation
+    return tag
+
+
 def main() -> int:
     args = build_parser().parse_args()
     capture = not args.no_capture
@@ -137,9 +151,8 @@ def main() -> int:
 
     k = _load_kernel()
 
-    config_tag = f"{args.dataset}_vb{args.bits}_T{args.t}_n{args.n_samples}_b{args.batch_size}_{args.dtype}"
-    if args.quantizer_seed != 42:
-        config_tag += f"_qs{args.quantizer_seed}"  # seed 42 keeps the original tag (backward-compatible)
+    config_tag = build_config_tag(args.dataset, args.bits, args.t, args.n_samples,
+                                  args.batch_size, args.dtype, args.quantizer_seed, args.links)
     work_dir = Path(args.out) / config_tag
     work_dir.mkdir(parents=True, exist_ok=True)
     upstream_work = work_dir / "_RecursiveMAS_work"
