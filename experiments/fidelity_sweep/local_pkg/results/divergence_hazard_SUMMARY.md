@@ -59,8 +59,9 @@ since essentially every problem is still at risk that early).
 
 ## Limitations
 
-- Single seed (one quantizer rotation, one problem order); the multi-seed replication in
-  `ROADMAP.md` §1 remains required.
+- This table is one quantizer rotation (seed 42); the quantizer-rotation replication is
+  now **done** — the gap holds across five rotations (`rotation_matrix_SUMMARY.md`). The
+  generation-seed and problem-subset axes still remain.
 - The early/late decomposition is descriptive; a formal log-rank / Cox comparison with a
   length covariate would quantify it. The early-hazard contrast is already length-robust by
   construction.
