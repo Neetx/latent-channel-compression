@@ -21,30 +21,25 @@ Recursive Multi-Agent System: Accuracy, Churn, and Trajectory Fidelity}
 \maketitle
 
 \begin{abstract}
-Latent-space multi-agent systems exchange dense activation vectors rather than
-text. We study whether these messages can be quantized aggressively without
-materially changing system behavior. We insert the data-oblivious, mean-squared
-error (MSE) core of TurboQuant into every latent link of the released RecursiveMAS
-system, without changing model weights or prompts. Our primary study runs locally
-on one RTX 5070 Ti and covers five task/tier cells: the $2\times2$ of \{Math500,
-MBPP+\} $\times$ \{light, scaled\} plus MedQA with the light tier. None of the five
-sampled ladders from 8 to 2 bits per coordinate ($4\times$--$16\times$ nominal
-compression) exhibits a monotonic rate--accuracy decline. In the four non-confounded
-paired-greedy cells, accuracy differences are $+2.0$, $-2.4$, $0$, and $-2.0$
-percentage points with confidence intervals spanning zero, while 4.4--10.0\% of
-individual answers change. Corrected top-$K$ capture analysis further shows that
-51.2--92.8\% of primary greedy sequences diverge within a 128-position window. On the
-MBPP+ task the scaled tier is markedly more trajectory-robust than the light tier
-(51.2\% versus 92.8\% divergence; matched-prefix KL 0.059 versus 0.113 nats), despite
-nearly identical measured channel cosine. Completing the $2\times2$ shows this contrast
-is \emph{task-specific}: on Math500 the same light-to-scaled change barely moves
-divergence (86.4\% versus 80.4\%). On MBPP+ the gap is robust to the quantizer rotation
-(a five-rotation matrix gives a problem-clustered light-minus-scaled contrast of
-$+40.2$ pp, 95\% CI $[+34.9,+45.7]$), so it is a replicated but task-conditioned tier
-association, not a causal model-capacity law. Our evidence supports aggregate answer robustness under
-aggressive fake quantization, but not bit-exact losslessness, trajectory
-preservation, or a deployable bandwidth claim. An earlier independent Kaggle T4
-Math500 ladder shows the same aggregate pattern under fp32.
+Aggressively quantizing the latent communication channel of a recursive multi-agent
+language-model system---the dense activation vectors its agents exchange in place of text,
+here reduced to 2--4 bits per coordinate---preserves aggregate task accuracy but does
+\emph{not} preserve the sequences of tokens the system generates. Whether such
+low-bit inter-agent messages are safe cannot be decided from single-vector reconstruction
+error: a small channel perturbation may be absorbed, may flip an individual answer, or may
+push greedy decoding across token-decision boundaries. We insert the data-oblivious
+mean-squared-error core of TurboQuant into every latent link of the released RecursiveMAS
+system---without changing weights or prompts---and separately measure channel
+reconstruction, final-answer behavior, and token-trajectory fidelity across five task/tier
+cells on a single consumer GPU. Across the four non-confounded cells, paired greedy accuracy
+deltas stay within $\pm2.4$ pp with confidence intervals spanning zero, yet 4.4--10\% of
+individual answers flip and 51--93\% of greedy trajectories diverge within 128 tokens. The
+trajectory effect is strongly tier- and task-dependent: on code the larger constellation is
+far more trajectory-robust than the smaller one---a $+40.2$ pp (95\% CI $[+34.9,+45.7]$)
+divergence gap that is stable across five quantizer rotations---but it nearly vanishes on
+math, making it a replicated yet task-specific association rather than a model-capacity law.
+The evidence supports aggregate answer robustness under aggressive fake quantization, not
+bit-exact losslessness, trajectory preservation, or a deployed bandwidth saving.
 \end{abstract}
 
 \section{Introduction}
@@ -58,37 +53,67 @@ can therefore become a systems bottleneck.
 Quantization is well studied for model weights and the attention KV cache. A latent
 inter-agent message is a different target: it is consumed once, transformed by a
 learned cross-model adapter, and repeatedly replaced as agents refine an answer.
-Small local errors may be harmless, may accumulate, or may push greedy decoding
-across token decision boundaries. These possibilities cannot be resolved from
-single-vector reconstruction error alone.
+Small local errors may be harmless, may accumulate, or may push greedy (deterministic,
+argmax) decoding across token-decision boundaries---changing which token is emitted next.
+These possibilities cannot be resolved from single-vector reconstruction error alone.
 
 We study RecursiveMAS \citep{recursivemas2026}, a released recursive latent
 multi-agent system, and the data-oblivious MSE core of TurboQuant
 \citep{turboquant2026}. The intervention randomly rotates and scalar-quantizes every
-inter-agent vector. We measure three distinct outcomes: channel reconstruction,
-final-answer behavior, and token-trajectory fidelity. Separating them matters. A
-system can preserve aggregate benchmark accuracy while changing which individual
-problems it solves and which reasoning text it generates.
+inter-agent vector. We measure three distinct outcomes: channel reconstruction (how faithfully the
+quantized vector is recovered), final-answer behavior (whether the system still solves the
+same problems), and token-trajectory fidelity (whether it emits the same sequence of tokens,
+step by step). Separating these matters: a system can preserve aggregate benchmark accuracy
+while changing which individual problems it solves and which reasoning text it generates.
 
-Our contributions are:
+Our central finding is a \emph{dissociation}: at 2--4 bits the latent channel is
+answer-robust in aggregate yet does not preserve which problems are solved or which
+reasoning text is produced. Concretely, we contribute:
 \begin{itemize}
-  \item an instrumentation-only implementation that quantizes all RecursiveMAS
-  latent links while preserving the released models and evaluation pipeline;
-  \item a primary five-cell local study (the $2\times2$ of \{Math500, MBPP+\} $\times$
-  \{light, scaled\} plus MedQA) with paired answer churn rather than net accuracy alone;
-  \item sampled bit-rate ladders with no detected monotonic aggregate-accuracy
-  degradation at $4\times$--$16\times$ nominal payload compression;
-  \item a corrected top-$K$ trajectory analysis that excludes conditional retry
-  calls and avoids double-counting probability mass in the residual tail;
-  \item an exploratory same-task result in which the scaled MBPP+ system is much
-  more trajectory-robust than the light system, shown to be \emph{task-specific} because
-  it does not reproduce on Math500; and
-  \item documentation of two measurement failures: pre-Ampere bf16 numerical
-  collapse and a greedy multiple-choice option bias.
+  \item the dissociation itself, quantified across five task/tier cells---paired greedy
+  accuracy deltas within $\pm2.4$ pp (confidence intervals spanning zero) alongside
+  4--10\% answer churn and 51--93\% trajectory divergence (Figure~\ref{fig:dissociation});
+  \item a same-task tier contrast---on code the scaled constellation is far more
+  trajectory-robust than the light one (a $+40.2$ pp divergence gap)---shown to be
+  \emph{task-specific} (it nearly vanishes on math) and robust across five quantizer
+  rotations, hence an association rather than a capacity law;
+  \item an instrumentation-only, reproducible pipeline that quantizes all RecursiveMAS
+  latent links without changing the released models, prompts, or evaluation; and
+  \item a corrected top-$K$ trajectory analysis (primary-call pairing, length-censored
+  first-divergence hazard) plus documentation of two measurement failures: pre-Ampere bf16
+  numerical collapse and a greedy multiple-choice option bias.
 \end{itemize}
 
 This is an empirical study, not a new compression algorithm. We evaluate the MSE
 core of TurboQuant and omit its QJL inner-product residual.
+
+\section{Related work}
+
+\paragraph{Quantizing large language models.}
+Most LLM quantization targets model weights---GPTQ~\citep{gptq}, AWQ~\citep{awq},
+LLM.int8()~\citep{llmint8}, and SmoothQuant~\citep{smoothquant}---or the attention
+key--value cache, where KIVI~\citep{kivi} pushes the cache to two bits. These objects are
+read repeatedly inside a single forward pass. The inter-agent latent message we compress is
+a different object: it is produced once, transformed by a learned cross-model adapter, and
+replaced as agents refine an answer, so its single-vector reconstruction error need not
+predict its downstream effect. Our quantizer is the data-oblivious mean-squared-error core
+of TurboQuant~\citep{turboquant2026}.
+
+\paragraph{Multi-agent systems and latent communication.}
+Multi-agent language-model systems improve reasoning by having models propose and critique
+answers, usually through text~\citep{debate}. A separate line replaces text with latent
+vectors: continuous-thought reasoning~\citep{coconut} and the recursive latent system we
+study, RecursiveMAS~\citep{recursivemas2026}, pass dense activations between agents. Such
+latent channels are precisely what a low-bit transport would compress, which motivates our
+study.
+
+\paragraph{Behavioral fidelity beyond accuracy.}
+Compression is usually judged by aggregate benchmark accuracy. We instead separate
+final-answer behavior from token-trajectory fidelity, and report paired answer churn and
+greedy divergence; at the answer level we use a two-one-sided equivalence test~\citep{tost}
+rather than reading non-significance as equivalence. Our planned teacher-forced,
+position-aligned follow-up builds on mechanistic-interpretability tooling~\citep{transformerlens}.
+We evaluate on Math500~\citep{math}, MBPP+~\citep{mbpp}, and MedQA~\citep{medqa}.
 
 \section{System and intervention}
 
@@ -163,6 +188,25 @@ and selection-conditioned: once tokens diverge, the next-token contexts differ.
 
 \section{Results}
 
+Figure~\ref{fig:dissociation} previews the central finding: across the non-confounded
+cells, aggregate accuracy barely moves, individual answers change somewhat more often, and
+greedy trajectories change far more often still. The following subsections quantify each
+of the three levels.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.80\linewidth]{figures/dissociation.pdf}
+\caption{\textbf{The central dissociation.} For each non-confounded cell: the magnitude of
+the paired greedy accuracy change ($\lvert\Delta\text{acc}\rvert$, in percentage points),
+the fraction of problems whose correctness flips (answer churn), and the fraction of greedy
+trajectories that diverge from the unquantized run within 128 tokens---each as a percentage
+of problems. Aggregate accuracy is nearly unchanged ($\le 2.4$ pp) while 4--10\% of answers
+churn and 51--93\% of trajectories diverge: the 4-bit channel is answer-robust in aggregate
+but not trajectory-preserving. MedQA is omitted (its greedy reference is confounded; see
+Section~\ref{sec:answer}).}
+\label{fig:dissociation}
+\end{figure}
+
 \subsection{The real channel matches the expected distortion rate}
 
 Table~\ref{tab:distortion} compares the real Solver adapter with synthetic
@@ -186,6 +230,7 @@ bits & synthetic ($d=2048$) & real adapter ($d=1536$) & reported rate \\
 \end{table}
 
 \subsection{Five-cell local answer behavior}
+\label{sec:answer}
 
 Table~\ref{tab:local-answer} extends the accuracy observation across both tasks and
 both tier contrasts. No sampled ladder is monotonically ordered by rate. In the four
@@ -219,38 +264,6 @@ appears to improve accuracy. Because the reference condition is pathological, th
 row cannot estimate channel fidelity; the non-monotonic sampled ladder is the valid
 task-level observation.
 
-\subsection{Independent cloud Math500 corroboration}
-
-An earlier fp32 T4 ladder at $n=250$ is flat within its uncertainty
-(Table~\ref{tab:cloud-ladder}, Figure~\ref{fig:ladder}). At 2 bits, REF and the
-quantized system both solve 188/250 problems. These unpaired stochastic runs support
-``no detected degradation,'' not exact equality, and provide an independent
-hardware/dtype corroboration of the local Math500 pattern.
-
-\begin{table}[t]
-\centering
-\caption{Independent historical Math500 sampled ladder (T4 fp32, $n=250$).}
-\label{tab:cloud-ladder}
-\begin{tabular}{lccc}
-\toprule
-bits & nominal compression & accuracy & delta versus REF \\
-\midrule
-REF & $1\times$ & 75.2\% & --- \\
-8 & $4\times$ & 78.4\% & +3.2 pp \\
-4 & $8\times$ & 76.8\% & +1.6 pp \\
-2 & $16\times$ & 75.2\% & 0.0 pp \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\begin{figure}[t]
-\centering
-\includegraphics[width=0.58\linewidth]{figures/bit_rate_ladder_n250.png}
-\caption{Independent T4 Math500 sampled accuracy versus bit rate. Error bars overlap;
-the experiment detects no monotonic degradation.}
-\label{fig:ladder}
-\end{figure}
-
 \subsection{Corrected trajectory fidelity}
 
 Table~\ref{tab:trajectory} reports the corrected primary-call analysis. Individual
@@ -279,9 +292,21 @@ MedQA / light & 96.4\% & 32.4 & 0.045 & 0.9952 \\
 \end{tabular}
 \end{table*}
 
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.64\linewidth]{figures/tier_task_divergence.pdf}
+\caption{\textbf{The tier contrast is task-specific.} Greedy trajectory divergence within
+128 tokens for the light ($\sim$1.5B) and scaled ($\sim$4B) tiers on MBPP+ (code) and
+Math500 (math). On code, scaling the constellation nearly halves divergence; on math the
+same change is small. Error bars on the MBPP+ bars are the standard deviation across five
+quantizer rotations (seeds $42,7,17,73,101$); Math500 is the single seed-42 rotation.}
+\label{fig:tiertask}
+\end{figure}
+
 The cleanest comparison holds task and local environment fixed: the light and scaled
-MBPP+ tiers, where scaling nearly halves divergence. Critically, this contrast does
-\emph{not} reproduce on Math500, where the same light-to-scaled change moves divergence
+MBPP+ tiers, where scaling nearly halves divergence (Figure~\ref{fig:tiertask}). Critically,
+this contrast does \emph{not} reproduce on Math500, where the same light-to-scaled change
+moves divergence
 only 86.4\% to 80.4\% and even raises matched-prefix KL. A general capacity law would
 predict a comparable drop on both tasks; its absence on Math500 means the effect is
 task-specific. The result is compatible with larger or more capable models absorbing
@@ -301,6 +326,40 @@ rotations treated as repeated measures, not independent items) gives a light-min
 contrast of $+40.2$ pp, 95\% CI $[+34.9,+45.7]$ within $128$ positions and $+31.8$ pp
 $[+25.9,+37.6]$ within the first $25$ (the length-robust early window). The effect is thus
 robust to the quantizer rotation; only the generation seed and problem subset remain fixed.
+
+\subsection{Independent cloud Math500 corroboration}
+
+An earlier fp32 T4 ladder at $n=250$ is flat within its uncertainty
+(Table~\ref{tab:cloud-ladder}, Figure~\ref{fig:ladder}). At 2 bits, REF and the
+quantized system both solve 188/250 problems. These unpaired stochastic runs support
+``no detected degradation,'' not exact equality, and provide an independent
+hardware/dtype corroboration of the local Math500 pattern.
+
+\begin{table}[t]
+\centering
+\caption{Independent historical Math500 sampled ladder (T4 fp32, $n=250$).}
+\label{tab:cloud-ladder}
+\begin{tabular}{lccc}
+\toprule
+bits & nominal compression & accuracy & delta versus REF \\
+\midrule
+REF & $1\times$ & 75.2\% & --- \\
+8 & $4\times$ & 78.4\% & +3.2 pp \\
+4 & $8\times$ & 76.8\% & +1.6 pp \\
+2 & $16\times$ & 75.2\% & 0.0 pp \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.62\linewidth]{figures/cloud_ladder.pdf}
+\caption{Independent historical corroboration: T4 fp32 Math500 sampled accuracy versus bit
+rate ($n=250$, Wilson 95\% intervals). The ladder is non-monotonic and every interval
+overlaps the baseline; these unpaired sampled runs support ``no detected degradation,'' not
+equivalence.}
+\label{fig:ladder}
+\end{figure}
 
 \section{Measurement failures and reproducibility lessons}
 
@@ -371,7 +430,7 @@ estimand, equivalence margin, seed pooling, and multiple-comparison policy.
 \section{Conclusion}
 
 The latent channel of RecursiveMAS tolerates aggressive data-oblivious fake
-quantization surprisingly well in aggregate accuracy across the completed cells.
+quantization well in aggregate accuracy across the completed cells.
 That robustness coexists with real behavioral change: individual answers churn and
 greedy trajectories often diverge. The scaled MBPP+ tier is substantially more
 trajectory-robust than the light tier --- robust across five quantizer rotations but

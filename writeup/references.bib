@@ -1,8 +1,7 @@
-% References, verified against authoritative sources at draft time:
-%   TurboQuant   — ICLR 2026 poster (preprint arXiv:2504.19874).
-%   RecursiveMAS — arXiv:2604.25917 (2026).
-% Only references we actually rely on are included.
+% References, verified against authoritative sources at draft time (arXiv / venue pages,
+% several cross-checked via web search). Only references the paper actually relies on.
 
+% --- the system and the quantizer we build on ---
 @inproceedings{turboquant2026,
   title     = {{TurboQuant}: {O}nline {V}ector {Q}uantization with {N}ear-optimal {D}istortion {R}ate},
   author    = {Zandieh, Amir and Daliri, Majid and Hadian, Majid and Mirrokni, Vahab},
@@ -18,4 +17,115 @@
              and Buehler, Markus J. and He, Jingrui and Zou, James},
   journal = {arXiv preprint arXiv:2604.25917},
   year    = {2026}
+}
+
+% --- LLM weight quantization ---
+@inproceedings{gptq,
+  title     = {{GPTQ}: Accurate Post-Training Quantization for Generative Pre-trained Transformers},
+  author    = {Frantar, Elias and Ashkboos, Saleh and Hoefler, Torsten and Alistarh, Dan},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2023},
+  note      = {arXiv:2210.17323}
+}
+
+@inproceedings{awq,
+  title     = {{AWQ}: Activation-aware Weight Quantization for {LLM} Compression and Acceleration},
+  author    = {Lin, Ji and Tang, Jiaming and Tang, Haotian and Yang, Shang and Dang, Xingyu
+             and Gan, Chuang and Han, Song},
+  booktitle = {Proceedings of Machine Learning and Systems (MLSys)},
+  year      = {2024},
+  note      = {arXiv:2306.00978}
+}
+
+@inproceedings{llmint8,
+  title     = {{LLM}.int8(): 8-bit Matrix Multiplication for Transformers at Scale},
+  author    = {Dettmers, Tim and Lewis, Mike and Belkada, Younes and Zettlemoyer, Luke},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  year      = {2022},
+  note      = {arXiv:2208.07339}
+}
+
+@inproceedings{smoothquant,
+  title     = {{SmoothQuant}: Accurate and Efficient Post-Training Quantization for Large Language Models},
+  author    = {Xiao, Guangxuan and Lin, Ji and Seznec, Mickael and Wu, Hao and Demouth, Julien and Han, Song},
+  booktitle = {International Conference on Machine Learning (ICML)},
+  year      = {2023},
+  note      = {arXiv:2211.10438}
+}
+
+% --- KV-cache quantization (the closest "activation channel" analogue) ---
+@inproceedings{kivi,
+  title     = {{KIVI}: A Tuning-Free Asymmetric 2bit Quantization for {KV} Cache},
+  author    = {Liu, Zirui and Yuan, Jiayi and Jin, Hongye and Zhong, Shaochen and Xu, Zhaozhuo
+             and Braverman, Vladimir and Chen, Beidi and Hu, Xia},
+  booktitle = {International Conference on Machine Learning (ICML)},
+  year      = {2024},
+  note      = {arXiv:2402.02750}
+}
+
+% --- multi-agent LLM systems and latent (non-text) inter-agent communication ---
+@inproceedings{debate,
+  title     = {Improving Factuality and Reasoning in Language Models through Multiagent Debate},
+  author    = {Du, Yilun and Li, Shuang and Torralba, Antonio and Tenenbaum, Joshua B. and Mordatch, Igor},
+  booktitle = {International Conference on Machine Learning (ICML)},
+  year      = {2024},
+  note      = {arXiv:2305.14325}
+}
+
+@article{coconut,
+  title   = {Training Large Language Models to Reason in a Continuous Latent Space},
+  author  = {Hao, Shibo and Sukhbaatar, Sainbayar and Su, DiJia and Li, Xian and Hu, Zhiting
+             and Weston, Jason and Tian, Yuandong},
+  journal = {arXiv preprint arXiv:2412.06769},
+  year    = {2024}
+}
+
+% --- evaluation benchmarks used ---
+@inproceedings{math,
+  title     = {Measuring Mathematical Problem Solving With the {MATH} Dataset},
+  author    = {Hendrycks, Dan and Burns, Collin and Kadavath, Saurav and Arora, Akul
+             and Basart, Steven and Tang, Eric and Song, Dawn and Steinhardt, Jacob},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS) Datasets and Benchmarks},
+  year      = {2021},
+  note      = {arXiv:2103.03874}
+}
+
+@article{mbpp,
+  title   = {Program Synthesis with Large Language Models},
+  author  = {Austin, Jacob and Odena, Augustus and Nye, Maxwell and Bosma, Maarten
+             and Michalewski, Henryk and Dohan, David and Jiang, Ellen and Cai, Carrie
+             and Terry, Michael and Le, Quoc and Sutton, Charles},
+  journal = {arXiv preprint arXiv:2108.07732},
+  year    = {2021}
+}
+
+@article{medqa,
+  title   = {What Disease does this Patient Have? A Large-scale Open Domain Question
+             Answering Dataset from Medical Exams},
+  author  = {Jin, Di and Pan, Eileen and Oufattole, Nassim and Weng, Wei-Hung
+             and Fang, Hanyi and Szolovits, Peter},
+  journal = {Applied Sciences},
+  volume  = {11},
+  number  = {14},
+  year    = {2021},
+  note    = {arXiv:2009.13081}
+}
+
+% --- mechanistic interpretability (the planned teacher-forced follow-up) ---
+@misc{transformerlens,
+  title        = {{TransformerLens}: A Library for Mechanistic Interpretability of Generative Language Models},
+  author       = {Nanda, Neel and Bloom, Joseph},
+  year         = {2022},
+  howpublished = {\url{https://github.com/TransformerLensOrg/TransformerLens}}
+}
+
+% --- equivalence testing ---
+@article{tost,
+  title   = {Equivalence Tests: A Practical Primer for t Tests, Correlations, and Meta-Analyses},
+  author  = {Lakens, Dani{\"e}l},
+  journal = {Social Psychological and Personality Science},
+  volume  = {8},
+  number  = {4},
+  pages   = {355--362},
+  year    = {2017}
 }
