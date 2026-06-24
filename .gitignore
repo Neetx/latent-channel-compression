@@ -31,6 +31,9 @@ experiments/results/
 .claude/settings.local.json
 *.env
 
+# Third-party workspace-local agent skills (installed tooling, not project artifacts)
+.claude/skills/
+
 # Jupyter
 .ipynb_checkpoints/
 
