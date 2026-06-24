@@ -29,8 +29,11 @@ It does not yet implement or evaluate the full QJL inner-product residual.
 4. On the MBPP+ task, the scaled tier is substantially more trajectory-robust than the
    light tier (51.2% vs 92.8% windowed divergence; matched-prefix KL 0.059 vs 0.113
    nats). On math500, however, the same light→scaled change is small (80.4% vs 86.4%
-   divergence, KL 0.147 vs 0.079), so the contrast is **task-specific**. This is an
-   exploratory tier association, not a causal model-size law.
+   divergence, KL 0.147 vs 0.079), so the contrast is **task-specific**. On MBPP+ it is
+   **robust to the quantizer rotation**: a five-rotation matrix (seeds 42, 7, 17, 73, 101)
+   gives a problem-clustered light−scaled contrast of +40.2 pp [+34.9, +45.7] (within 128)
+   and +31.8 pp [+25.9, +37.6] (within 25). It remains a task-specific tier association,
+   not a causal model-size law.
 5. Light-MedQA greedy REF is pathologically biased toward option A. Its +15.2 pp
    INT4 delta is a diagnostic failure case, not evidence that compression improves
    medicine performance; sampled decoding is the valid task-level evidence.

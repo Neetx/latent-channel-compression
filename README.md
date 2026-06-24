@@ -36,6 +36,12 @@ tasks:** on Math500 the same light→scaled change barely moves divergence (86.4
 a **task-specific tier association**, not a causal law of model capacity; architecture,
 checkpoint family, competence, length, and token margins also differ.
 
+The MBPP+ gap is, however, **robust to the quantizer rotation**: a five-rotation matrix
+(quantizer seeds 42, 7, 17, 73, 101) gives a problem-clustered light−scaled contrast of
+**+40.2 pp [+34.9, +45.7]** (divergence within 128) and **+31.8 pp [+25.9, +37.6]**
+(within 25), so it is not a single-rotation artifact
+([results/rotation_matrix_SUMMARY.md](experiments/fidelity_sweep/local_pkg/results/rotation_matrix_SUMMARY.md)).
+
 MedQA greedy REF develops a pathological first-option bias. Its apparent +15.2 pp
 INT4 gain is a diagnostic failure case, not evidence that quantization improves
 medical reasoning. Use its non-monotonic sampled ladder for task-level interpretation.

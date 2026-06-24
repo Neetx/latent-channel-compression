@@ -26,6 +26,9 @@ Current local findings, n=250, seed 42, T=3:
 - MBPP+/scaled is much more trajectory-robust than MBPP+/light, but this does NOT
   generalise -- on Math500 the same light->scaled change barely moves divergence
   (86.4% -> 80.4%) -- so it is a task-specific tier association, not a causal capacity law;
+- the MBPP+ gap is robust to the quantizer rotation: a 5-rotation matrix gives
+  light-scaled = +40.2 pp [+34.9, +45.7] (within 128) and +31.8 pp [+25.9, +37.6]
+  (within 25), so it is not a single-rotation artifact (see results/rotation_matrix_SUMMARY.md);
 - MedQA greedy is confounded by a pathological REF first-option bias.
 
 Never call the intervention lossless, formally equivalent, trajectory preserving, or

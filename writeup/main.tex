@@ -38,8 +38,10 @@ MBPP+ task the scaled tier is markedly more trajectory-robust than the light tie
 (51.2\% versus 92.8\% divergence; matched-prefix KL 0.059 versus 0.113 nats), despite
 nearly identical measured channel cosine. Completing the $2\times2$ shows this contrast
 is \emph{task-specific}: on Math500 the same light-to-scaled change barely moves
-divergence (86.4\% versus 80.4\%). It is therefore an exploratory, task-conditioned
-tier association, not a causal model-capacity law. Our evidence supports aggregate answer robustness under
+divergence (86.4\% versus 80.4\%). On MBPP+ the gap is robust to the quantizer rotation
+(a five-rotation matrix gives a problem-clustered light-minus-scaled contrast of
+$+40.2$ pp, 95\% CI $[+34.9,+45.7]$), so it is a replicated but task-conditioned tier
+association, not a causal model-capacity law. Our evidence supports aggregate answer robustness under
 aggressive fake quantization, but not bit-exact losslessness, trajectory
 preservation, or a deployable bandwidth claim. An earlier independent Kaggle T4
 Math500 ladder shows the same aggregate pattern under fp32.
@@ -289,6 +291,17 @@ generated length. Equal cosine likewise describes geometric reconstruction, not 
 semantic perturbations. We therefore call this a task-conditioned tier association and
 treat a causal capacity claim as a hypothesis for replication.
 
+\paragraph{Robustness to the quantizer rotation.}
+To check that the MBPP+ contrast is not an artifact of one random rotation, we reran the
+INT4 capture for both tiers at five quantizer rotations (rotation seeds $42,7,17,73,101$),
+reusing the rotation-independent greedy REF. Per rotation, light divergence is
+$91.6$--$93.6\%$ and scaled is $50.4$--$55.2\%$ within $128$ positions; the ranges never
+overlap. A problem-clustered bootstrap over the five rotations (problems resampled;
+rotations treated as repeated measures, not independent items) gives a light-minus-scaled
+contrast of $+40.2$ pp, 95\% CI $[+34.9,+45.7]$ within $128$ positions and $+31.8$ pp
+$[+25.9,+37.6]$ within the first $25$ (the length-robust early window). The effect is thus
+robust to the quantizer rotation; only the generation seed and problem subset remain fixed.
+
 \section{Measurement failures and reproducibility lessons}
 
 \paragraph{Hardware precision.}
@@ -336,16 +349,19 @@ fidelity of reconstructed messages, not end-to-end throughput.
 
 \section{Limitations and next steps}
 
-All local cells use one seed and one machine. The \{math, code\} $\times$ \{light,
-scaled\} $2\times2$ is now crossed, but only at a single seed; MedQA greedy is
-confounded, and MBPP+ contains only 378 available problems. Confidence intervals still
+All local cells use one machine and a single generation seed. The \{math, code\} $\times$
+\{light, scaled\} $2\times2$ is now crossed, and the MBPP+ tier contrast is additionally
+confirmed across five quantizer rotations; but the generation seed and problem subset
+remain singular. MedQA greedy is confounded, and MBPP+ contains only 378 available
+problems. Confidence intervals still
 allow effects of several percentage points. The trajectory window is
 128 positions, local capture uses $K=256$, and matched-prefix KL is not a
 teacher-forced causal comparison. We evaluate fake quantization and the TurboQuant
 MSE core only.
 
-The highest-value next steps are: (i) repeat both MBPP+ tiers at three to five seeds
-(scaled Math500 is complete and shows the tier effect is task-specific); (ii) force REF tokens in both conditions and measure aligned
+The highest-value next steps are: (i) sweep the generation seed and problem subset on
+MBPP+ (the five-quantizer-rotation matrix is complete and confirms the light/scaled gap,
+$+40.2$ pp $[+34.9,+45.7]$); (ii) force REF tokens in both conditions and measure aligned
 KL, rank, and top-1 margins; (iii) sweep 2/3/4/6/8 bits with an unrotated scalar
 baseline; (iv) implement the QJL residual; (v) test a tool-sensitive deliberation
 topology and a high-baseline non-math task; and (vi) measure serialized bytes,
@@ -358,9 +374,9 @@ The latent channel of RecursiveMAS tolerates aggressive data-oblivious fake
 quantization surprisingly well in aggregate accuracy across the completed cells.
 That robustness coexists with real behavioral change: individual answers churn and
 greedy trajectories often diverge. The scaled MBPP+ tier is substantially more
-trajectory-robust than the light tier, but completing the $2\times2$ shows this is
-task-specific---it does not reproduce on Math500---so it is a result worth testing
-causally, not yet a capacity law. The practical conclusion is precise: low-bit latent communication is
+trajectory-robust than the light tier --- robust across five quantizer rotations but
+task-specific (it does not reproduce on Math500) --- so it is a replicated association
+worth a causal mechanism test, not yet a capacity law. The practical conclusion is precise: low-bit latent communication is
 a credible systems direction, but claims of losslessness require stronger statistics,
 position-aligned fidelity, broader tasks and architectures, and real transport
 measurements.

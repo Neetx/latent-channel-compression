@@ -29,8 +29,12 @@ completing the 2×2 with Sequential-Scaled × math500 shows that the same light�
 change on math500 barely moves divergence (86.4% → 80.4%) and actually *raises*
 matched-prefix KL (0.079 → 0.147). The MBPP+ gap is therefore a task-and-tier-conditioned
 association, **not yet a causal law of model capacity**: the tiers differ in models,
-tokenizers, adapters, hidden dimensions, generation lengths, and logit margins; only one
-seed has been measured; and the contrast's sign and magnitude depend on the task.
+tokenizers, adapters, hidden dimensions, generation lengths, and logit margins; and the
+contrast's sign and magnitude depend on the task. On MBPP+ the gap is, however, **robust
+to the quantizer rotation** — a five-rotation matrix (seeds 42, 7, 17, 73, 101) gives a
+problem-clustered light−scaled contrast of +40.2 pp [+34.9, +45.7] (within 128) and
++31.8 pp [+25.9, +37.6] (within 25) — so a single quantizer rotation is ruled out as the
+explanation, though a single generation seed and problem order remain.
 
 MedQA exposes a separate methodological failure mode. Under greedy decoding the weak
 unquantized REF develops a strong first-option bias; INT4 acts like dither and raises
@@ -161,9 +165,10 @@ depth or causal-capacity claim.
 
 The current evidence supports:
 
-> On MBPP+ at seed 42, Sequential-Scaled is substantially less likely than
-> Sequential-Light to diverge within the first 128 greedy decode positions under
-> the same 4-bit quantizer and nearly identical mean channel cosine.
+> On MBPP+, across five quantizer rotations, Sequential-Scaled is substantially less
+> likely than Sequential-Light to diverge within the first 128 greedy decode positions
+> under the same 4-bit quantizer and nearly identical mean channel cosine (problem-clustered
+> light−scaled gap +40.2 pp [+34.9, +45.7]).
 
 It does not yet support:
 
@@ -197,7 +202,9 @@ Key files:
    report:** the math500 tier contrast is small (86.4% → 80.4%), so the MBPP+ gap is
    task-specific. The priority shifts from "measure more tiers" to "explain the MBPP+
    gap" — items 3–4 below.
-2. Repeat MBPP+ light/scaled at 3--5 seeds and pool paired discordances.
+2. ~~Repeat MBPP+ light/scaled across rotations and pool discordances.~~ **Done for the
+   quantizer rotation** (5-rotation matrix, gap +40.2 pp [+34.9, +45.7]; see
+   `results/rotation_matrix_SUMMARY.md`). The generation-seed and problem-subset axes remain.
 3. Compute output-length distributions and a per-token first-divergence hazard with
    right-censoring.
 4. Test whether REF top-1/top-2 logit margins explain the light/scaled contrast.
