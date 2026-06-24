@@ -139,10 +139,20 @@ results.
 
 #### 1B. Minimum confirmatory matrix
 
-1. MBPP+ / light: INT4 at at least 5 quantizer rotations, same 250 problems.
-2. MBPP+ / scaled: the same rotations and problem indices.
-3. Math500 / scaled: REF plus the same INT4 rotations.
-4. Math500 / light: reuse the compatible REF and rerun INT4 rotations as needed.
+1. MBPP+ / light: INT4 at at least 5 quantizer rotations, same 250 problems. **DONE.**
+2. MBPP+ / scaled: the same rotations and problem indices. **DONE.**
+3. Math500 / scaled: REF plus the same INT4 rotations. (open)
+4. Math500 / light: reuse the compatible REF and rerun INT4 rotations as needed. (open)
+
+**MBPP+ rotation matrix complete** (rotations 42, 7, 17, 73, 101; INT4 only, the
+rotation-independent seed-42 REF reused; `run_rotation_matrix.py` +
+`rotation_matrix_analysis.py`). The light/scaled divergence gap is robust to the
+quantizer rotation: per-rotation light 91.6–93.6% vs scaled 50.4–55.2% within 128, and a
+problem-clustered bootstrap over the five rotations gives **+40.2 pp [+34.9, +45.7]**
+(within 128) and **+31.8 pp [+25.9, +37.6]** (within 25, length-robust) — CIs far from
+zero. See [`results/rotation_matrix_SUMMARY.md`](experiments/fidelity_sweep/local_pkg/results/rotation_matrix_SUMMARY.md).
+The Math500 rotations (3–4) remain, but Math500 already shows a near-zero tier gap at the
+original rotation, so they are lower priority than the teacher-forced mechanism test.
 
 Use top-K=256 and capture at least 256 positions if memory/disk permit. Always report
 the original 128-position estimand as a fixed comparable slice; treat longer-window
@@ -163,10 +173,13 @@ generation length, baseline correctness, and REF token margin.
 
 #### 1D. Interpretation gate
 
-- If scaled is lower-divergence across rotations and on both MBPP+ and Math500, call
-  it a **replicated tier-associated trajectory-robustness effect**.
-- If the difference disappears after length/margin adjustment, report the mediator
-  rather than a tier effect.
+- **Current verdict:** on MBPP+ the scaled tier is lower-divergence across all five
+  rotations (gap +40 pp, CI far from 0), so it is a **replicated, rotation-robust
+  tier-associated trajectory-robustness effect on MBPP+** — but it does **not** reproduce
+  on Math500 (near-zero tier gap there), so the effect is **task-specific**, not general.
+- The length/margin adjustment is still open: the early-window (within-25) contrast is
+  already large and length-robust (+31.8 pp [+25.9, +37.6]), but a teacher-forced
+  margin-mediation test (§2) is needed before claiming the mechanism.
 - Do not call it a causal parameter-count/capacity law unless model family and
   architecture are controlled more tightly than Sequential-Light versus Scaled.
 
