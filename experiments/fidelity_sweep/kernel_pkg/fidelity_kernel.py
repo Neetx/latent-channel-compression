@@ -78,13 +78,17 @@ _VB_BITS = int(_vb_os.environ.get("VARIANT_B_BITS", "0"))
 _VB_CAPTURE = _vb_os.environ.get("CAPTURE_MODE", "0") == "1"
 _VB_TOPK = int(_vb_os.environ.get("TOPK_LOGITS", "512"))
 _VB_MAXPOS = int(_vb_os.environ.get("MAX_LOGIT_POSITIONS", "256"))
+# Quantizer rotation/codebook seed. Distinct from the RecursiveMAS generation seed
+# (--seed) and from the problem subset/order; defaults to 42 so backends that do not
+# set it reproduce the original condition exactly.
+_VB_QSEED = int(_vb_os.environ.get("QUANTIZER_SEED", "42"))
 # Output dir + src location are env-configurable so the SAME head runs on Kaggle
 # (defaults below) and Modal (FIDELITY_WORK_DIR=/work, FIDELITY_SRC_ROOT=/root).
 _VB_WORK = _vb_os.environ.get("FIDELITY_WORK_DIR", "/kaggle/working")
 _VB_SRC_ROOT_ENV = _vb_os.environ.get("FIDELITY_SRC_ROOT", "")
 _VB_LOG = _vb_os.path.join(_VB_WORK, "vb_patches.log")
 with open(_VB_LOG, "w") as _vbf:
-    print(f"=== fidelity injector — bits={_VB_BITS} capture={_VB_CAPTURE} topk={_VB_TOPK} maxpos={_VB_MAXPOS} work={_VB_WORK} ===", file=_vbf)
+    print(f"=== fidelity injector — bits={_VB_BITS} capture={_VB_CAPTURE} topk={_VB_TOPK} maxpos={_VB_MAXPOS} qseed={_VB_QSEED} work={_VB_WORK} ===", file=_vbf)
 _vb_stats_registry = []
 if _VB_BITS > 0:
     if _VB_SRC_ROOT_ENV:
@@ -103,7 +107,7 @@ if _VB_BITS > 0:
     from src.quantizers.turboquant_honest import TurboQuantHonest as _VB_Quant
 
     def _vb_quant_factory(d):
-        return _VB_Quant(d=d, bits=_VB_BITS, seed=42)
+        return _VB_Quant(d=d, bits=_VB_BITS, seed=_VB_QSEED)
 
 # ---------- Tier 2: per-problem top-K logit capture ------------------------
 #

@@ -119,19 +119,23 @@ This is the highest-priority scientific question. The 92.8% (light) versus 51.2%
 quantizer rotation, one problem subset/order, one task contrast, and a 128-position
 window.
 
-#### 1A. Make seeds explicit before running
+#### 1A. Make seeds explicit before running — IMPLEMENTED
 
-The injected quantizer currently fixes its Haar/quantizer seed at 42. Add distinct,
-recorded CLI/config fields for:
+`quantizer_seed` is now a first-class, recorded field distinct from the generation seed.
+It is plumbed CLI -> child env `QUANTIZER_SEED` -> injected head `_VB_QSEED` -> the
+`TurboQuantHonest` factory, and recorded in the config tag, output dir, result JSON, and
+cell manifest. Seed 42 is the default and keeps the original (unsuffixed) tags and log
+names; any other seed `N` writes to a `..._qsN` tag, so rotations never collide and the
+existing seed-42 results/analyzers resolve unchanged. Tests cover propagation, tag
+suffixing, backward compatibility, and quantizer seed determinism/sensitivity
+(`tests/test_quantizer_seed.py`, `tests/test_fidelity_kernel.py`); an end-to-end GPU smoke
+at `--quantizer-seed 7` was verified.
 
-- `quantizer_seed` (rotation/codebook randomness; primary replication axis);
-- `generation_seed` (sampled decoding only);
-- problem indices/order or subset manifest.
-
-Do not call all three simply `seed`. Preserve seed 42 as the original condition and
-pre-register additional rotation seeds before inspecting results. Greedy REF does not
-depend on quantizer rotation and can be reused when every other condition is identical;
-INT4 must be rerun for each rotation.
+Still distinct and not yet swept: `generation_seed` (sampled decoding only, fixed at 42)
+and the problem indices/order or subset manifest. Greedy REF does not depend on the
+quantizer rotation and can be reused when every other condition is identical; INT4 must be
+rerun for each rotation. Pre-register the additional rotation seeds before inspecting
+results.
 
 #### 1B. Minimum confirmatory matrix
 

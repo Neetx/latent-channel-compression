@@ -68,9 +68,16 @@ def acc_from(logpath: Path):
         return None
 
 
-def validate_result(out: Path, dataset: str, bits: int, n: int, batch: int, capture: bool):
+def qs_suffix(quantizer_seed: int) -> str:
+    """Tag/log suffix for a non-default quantizer rotation. Seed 42 stays unsuffixed so
+    the original results and analyzers keep resolving unchanged."""
+    return "" if quantizer_seed == 42 else f"_qs{quantizer_seed}"
+
+
+def validate_result(out: Path, dataset: str, bits: int, n: int, batch: int, capture: bool,
+                    quantizer_seed: int = 42):
     """Validate the machine-readable contract emitted by one completed condition."""
-    tag = f"{dataset}_vb{bits}_T3_n{n}_b{batch}_auto"
+    tag = f"{dataset}_vb{bits}_T3_n{n}_b{batch}_auto{qs_suffix(quantizer_seed)}"
     path = out / tag / f"fidelity_{tag}.json"
     if not path.is_file():
         return False, f"missing result JSON: {path}"
@@ -139,10 +146,10 @@ def release_cell_lock(lock: Path) -> None:
         pass
 
 
-def run_one(style, dataset, bits, n, batch, capture, logpath, py, out):
+def run_one(style, dataset, bits, n, batch, capture, logpath, py, out, quantizer_seed=42):
     cmd = [py, str(DRIVER), "--style", style, "--dataset", dataset, "--bits", str(bits),
            "--t", "3", "--n-samples", str(n), "--batch-size", str(batch),
-           "--out", str(out)]
+           "--quantizer-seed", str(quantizer_seed), "--out", str(out)]
     if not capture:
         cmd.append("--no-capture")
     t0 = time.time()
@@ -163,8 +170,12 @@ def main() -> int:
     ap.add_argument("--resume", action="store_true",
                     help="skip conditions whose valid result JSON already exists "
                          "(continue an interrupted cell without recomputing finished conditions)")
+    ap.add_argument("--quantizer-seed", type=int, default=42,
+                    help="quantizer rotation seed for the whole cell (distinct from the "
+                         "generation seed); 42 keeps the original tags and log names")
     args = ap.parse_args()
 
+    sfx = qs_suffix(args.quantizer_seed)
     tag = f"{args.style}_{args.dataset}"
     run_root = Path(os.environ.get("LCC_RUN_ROOT", Path.home() / "lcc" / "runs"))
     out = Path(args.out) if args.out else (run_root / tag)
@@ -179,14 +190,14 @@ def main() -> int:
     runs = []
 
     print(f"=== CELL {tag}  n={args.n}  ladder_b={args.ladder_batch}  cap_b={args.cap_batch}  "
-          f"{time.strftime('%Y-%m-%d %H:%M:%S')} ===", flush=True)
+          f"qseed={args.quantizer_seed}  {time.strftime('%Y-%m-%d %H:%M:%S')} ===", flush=True)
 
     print("### PHASE 1: sampled ladder ###", flush=True)
     for b in (0, 8, 4, 2):
-        lp = out / f"ladder_b{b}_n{args.n}.log"
+        lp = out / f"ladder_b{b}_n{args.n}{sfx}.log"
         if args.resume:
             valid, detail = validate_result(
-                out, args.dataset, b, args.n, args.ladder_batch, False
+                out, args.dataset, b, args.n, args.ladder_batch, False, args.quantizer_seed
             )
             if valid:
                 runs.append({"phase": "ladder", "bits": b, "return_code": 0,
@@ -196,7 +207,7 @@ def main() -> int:
         print(f"[ladder bits={b}] start {time.strftime('%H:%M:%S')}", flush=True)
         rc, dt, cmd = run_one(
             args.style, args.dataset, b, args.n, args.ladder_batch, False, lp,
-            args.python, out,
+            args.python, out, args.quantizer_seed,
         )
         runs.append({"phase": "ladder", "bits": b, "return_code": rc,
                      "seconds": round(dt, 1), "command": cmd, "log": str(lp)})
@@ -206,7 +217,7 @@ def main() -> int:
             print(f"[fatal] stopping after failed condition; inspect {lp}", file=sys.stderr)
             return rc
         valid, detail = validate_result(
-            out, args.dataset, b, args.n, args.ladder_batch, False
+            out, args.dataset, b, args.n, args.ladder_batch, False, args.quantizer_seed
         )
         if not valid:
             print(f"[fatal] {detail}", file=sys.stderr)
@@ -214,10 +225,10 @@ def main() -> int:
 
     print("### PHASE 2: greedy paired fidelity ###", flush=True)
     for b in (0, 4):
-        lp = out / f"fidelity_b{b}_n{args.n}.log"
+        lp = out / f"fidelity_b{b}_n{args.n}{sfx}.log"
         if args.resume:
             valid, detail = validate_result(
-                out, args.dataset, b, args.n, args.cap_batch, True
+                out, args.dataset, b, args.n, args.cap_batch, True, args.quantizer_seed
             )
             if valid:
                 runs.append({"phase": "fidelity", "bits": b, "return_code": 0,
@@ -227,7 +238,7 @@ def main() -> int:
         print(f"[fidelity bits={b}] start {time.strftime('%H:%M:%S')}", flush=True)
         rc, dt, cmd = run_one(
             args.style, args.dataset, b, args.n, args.cap_batch, True, lp,
-            args.python, out,
+            args.python, out, args.quantizer_seed,
         )
         runs.append({"phase": "fidelity", "bits": b, "return_code": rc,
                      "seconds": round(dt, 1), "command": cmd, "log": str(lp)})
@@ -237,7 +248,7 @@ def main() -> int:
             print(f"[fatal] stopping after failed condition; inspect {lp}", file=sys.stderr)
             return rc
         valid, detail = validate_result(
-            out, args.dataset, b, args.n, args.cap_batch, True
+            out, args.dataset, b, args.n, args.cap_batch, True, args.quantizer_seed
         )
         if not valid:
             print(f"[fatal] {detail}", file=sys.stderr)
@@ -246,6 +257,7 @@ def main() -> int:
     manifest = {
         "style": args.style, "dataset": args.dataset, "n": args.n,
         "ladder_batch": args.ladder_batch, "capture_batch": args.cap_batch,
+        "quantizer_seed": args.quantizer_seed, "generation_seed": 42,
         "python_executable": args.python, "output_directory": str(out),
         "environment": environment_metadata(), "runs": runs,
     }
@@ -253,9 +265,9 @@ def main() -> int:
 
     print(f"=== DONE {tag} {time.strftime('%H:%M:%S')} ===", flush=True)
     for b in (0, 8, 4, 2):
-        print(f"  ladder   bits={b}: {acc_from(out / f'ladder_b{b}_n{args.n}.log')}")
+        print(f"  ladder   bits={b}: {acc_from(out / f'ladder_b{b}_n{args.n}{sfx}.log')}")
     for b in (0, 4):
-        print(f"  fidelity bits={b}: {acc_from(out / f'fidelity_b{b}_n{args.n}.log')}")
+        print(f"  fidelity bits={b}: {acc_from(out / f'fidelity_b{b}_n{args.n}{sfx}.log')}")
     print(f"  manifest: {out / 'cell_manifest.json'}")
     return 0
 

@@ -100,6 +100,10 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Local fidelity_sweep backend (single CUDA GPU).")
     p.add_argument("--bits", type=int, default=0, help="0 = REF (no quant), N>0 = Variant B N-bit")
     p.add_argument("--t", type=int, default=3, help="channel-traversal count = num_recursive_rounds")
+    p.add_argument("--quantizer-seed", type=int, default=42,
+                   help="quantizer rotation/codebook seed, distinct from the generation seed "
+                        "and the problem subset/order; 42 reproduces the original condition and "
+                        "keeps the original (unsuffixed) config tag")
     p.add_argument("--n-samples", type=int, default=4)
     p.add_argument("--batch-size", type=int, default=2)
     p.add_argument("--dataset", default="math500", choices=["math500", "medqa", "gpqa", "mbppplus"])
@@ -134,6 +138,8 @@ def main() -> int:
     k = _load_kernel()
 
     config_tag = f"{args.dataset}_vb{args.bits}_T{args.t}_n{args.n_samples}_b{args.batch_size}_{args.dtype}"
+    if args.quantizer_seed != 42:
+        config_tag += f"_qs{args.quantizer_seed}"  # seed 42 keeps the original tag (backward-compatible)
     work_dir = Path(args.out) / config_tag
     work_dir.mkdir(parents=True, exist_ok=True)
     upstream_work = work_dir / "_RecursiveMAS_work"
@@ -146,7 +152,7 @@ def main() -> int:
     print(f"  work_dir       = {work_dir}")
     print(f"  HF_HOME        = {os.environ.get('HF_HOME', '(unset)')}")
     print(f"  bits={args.bits} T={args.t} n={args.n_samples} batch={args.batch_size} "
-          f"dtype={args.dtype} capture={capture} links={args.links}")
+          f"dtype={args.dtype} capture={capture} links={args.links} qseed={args.quantizer_seed}")
 
     t0 = time.time()
     final_acc = None
@@ -183,6 +189,7 @@ def main() -> int:
             "TOKENIZERS_PARALLELISM": "false",
             "PYTHONUNBUFFERED": "1",
             "VARIANT_B_BITS": str(args.bits),
+            "QUANTIZER_SEED": str(args.quantizer_seed),
             "CAPTURE_MODE": "1" if capture else "0",
             "TOPK_LOGITS": str(args.topk),
             "MAX_LOGIT_POSITIONS": str(args.maxpos),
@@ -255,7 +262,8 @@ def main() -> int:
             "bits": args.bits, "t": args.t, "n_samples": args.n_samples,
             "batch_size": args.batch_size, "dataset": args.dataset, "dtype": args.dtype,
             "capture": capture, "links": args.links, "config_tag": config_tag,
-            "seed": 42, "decoding": "greedy" if capture else "sampled",
+            "seed": 42, "generation_seed": 42, "quantizer_seed": args.quantizer_seed,
+            "decoding": "greedy" if capture else "sampled",
             "upstream_commit": upstream_commit,
         },
         "final_accuracy": final_acc,

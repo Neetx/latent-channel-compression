@@ -76,6 +76,16 @@ class TestLocalBackendIsolation:
         assert "git_restore" not in source
         assert '["git", "-C", str(UPSTREAM_SOURCE), "checkout"' not in source
 
+    def test_fidelity_local_quantizer_seed_plumbing(self):
+        src = LOCAL_DRIVER_PATH.read_text()
+        assert '"QUANTIZER_SEED": str(args.quantizer_seed)' in src   # propagated to child env
+        assert "_qs{args.quantizer_seed}" in src                     # tag suffix for non-42 seeds
+        assert '"quantizer_seed": args.quantizer_seed' in src        # recorded in the result JSON
+        local = _load_path("fidelity_local_qs", LOCAL_DRIVER_PATH)
+        p = local.build_parser()
+        assert p.parse_args(["--bits", "4"]).quantizer_seed == 42    # default = original condition
+        assert p.parse_args(["--bits", "4", "--quantizer-seed", "7"]).quantizer_seed == 7
+
     def test_run_cell_validates_capture_contract(self, tmp_path):
         runner = _load_path("run_cell_test", RUN_CELL_PATH)
         tag = "math500_vb4_T3_n4_b2_auto"
@@ -119,7 +129,8 @@ class TestLocalBackendIsolation:
 
         calls = []
 
-        def fake_run_one(style, dataset, bits, n, batch, capture, logpath, py, out):
+        def fake_run_one(style, dataset, bits, n, batch, capture, logpath, py, out,
+                         quantizer_seed=42):
             calls.append(("fidelity" if capture else "ladder", bits))
             Path(logpath).write_text("accuracy=50.00%\n")
             write_valid(out, dataset, bits, n, batch, capture)
@@ -164,6 +175,72 @@ class TestLocalBackendIsolation:
         claimed = runner.claim_cell_lock(tmp_path)
         assert claimed == lock
         assert lock.read_text().strip() == str(os.getpid())
+
+    def test_qs_suffix_keeps_seed_42_unsuffixed(self):
+        runner = _load_path("run_cell_qs_test", RUN_CELL_PATH)
+        assert runner.qs_suffix(42) == ""        # backward-compatible original condition
+        assert runner.qs_suffix(7) == "_qs7"
+        # validate_result resolves the suffixed tag, not the seed-42 one
+        # (a seed-7 result must NOT satisfy a seed-42 lookup and vice versa)
+        assert runner.qs_suffix(101) == "_qs101"
+
+    def test_validate_result_uses_quantizer_seed_tag(self, tmp_path):
+        runner = _load_path("run_cell_qs_test2", RUN_CELL_PATH)
+        tag = "math500_vb4_T3_n6_b1_auto_qs7"
+        d = tmp_path / tag
+        d.mkdir()
+        (d / f"fidelity_{tag}.json").write_text(json.dumps(
+            {"return_code": 0, "final_accuracy": 50.0,
+             "n_per_problem": 6, "n_logit_batches": 1, "call_stats_present": True}))
+        ok, _ = runner.validate_result(tmp_path, "math500", 4, 6, 1, True, quantizer_seed=7)
+        assert ok
+        # the default seed-42 lookup must miss this seed-7 result
+        bad, _ = runner.validate_result(tmp_path, "math500", 4, 6, 1, True)
+        assert not bad
+
+    def test_run_one_cmd_includes_quantizer_seed(self, tmp_path, monkeypatch):
+        runner = _load_path("run_cell_qs_test3", RUN_CELL_PATH)
+
+        class _Proc:
+            returncode = 0
+
+        monkeypatch.setattr(runner.subprocess, "run", lambda *a, **k: _Proc())
+        _, _, cmd = runner.run_one("sequential_light", "math500", 4, 6, 2, True,
+                                   tmp_path / "x.log", "py", tmp_path, quantizer_seed=7)
+        assert "--quantizer-seed" in cmd
+        assert cmd[cmd.index("--quantizer-seed") + 1] == "7"
+
+    def test_run_cell_propagates_quantizer_seed_and_log_suffix(self, tmp_path, monkeypatch):
+        runner = _load_path("run_cell_qs_test4", RUN_CELL_PATH)
+        seen = []
+
+        def fake_run_one(style, dataset, bits, n, batch, capture, logpath, py, out,
+                         quantizer_seed=42):
+            seen.append((bits, quantizer_seed, Path(logpath).name))
+            Path(logpath).write_text("accuracy=50.00%\n")
+            tag = f"{dataset}_vb{bits}_T3_n{n}_b{batch}_auto{runner.qs_suffix(quantizer_seed)}"
+            d = out / tag
+            d.mkdir(parents=True, exist_ok=True)
+            res = {"return_code": 0, "final_accuracy": 50.0}
+            if capture:
+                res.update({"n_per_problem": n, "n_logit_batches": 1,
+                            "call_stats_present": bits > 0})
+            (d / f"fidelity_{tag}.json").write_text(json.dumps(res))
+            return 0, 0.0, ["stub"]
+
+        monkeypatch.setattr(runner, "run_one", fake_run_one)
+        monkeypatch.setattr(runner, "environment_metadata", lambda: {})
+        monkeypatch.setattr(sys, "argv", [
+            "run_cell.py", "--style", "sequential_scaled", "--dataset", "mbppplus",
+            "--out", str(tmp_path), "--n", "6", "--ladder-batch", "4", "--cap-batch", "1",
+            "--quantizer-seed", "7",
+        ])
+        assert runner.main() == 0
+        # every condition received seed 7, and the logs carry the _qs7 suffix
+        assert seen and all(qs == 7 for _, qs, _ in seen)
+        assert all("_qs7" in name for _, _, name in seen)
+        manifest = json.loads((tmp_path / "cell_manifest.json").read_text())
+        assert manifest["quantizer_seed"] == 7 and manifest["generation_seed"] == 42
 
 
 _NEED_UPSTREAM = pytest.mark.skipif(
@@ -261,8 +338,12 @@ class TestPatchInferenceMas:
         # and reads the env vars the driver propagates to the child, incl. the
         # FIDELITY_WORK_DIR / FIDELITY_SRC_ROOT knobs that make it portable to Modal
         for key in ("VARIANT_B_BITS", "CAPTURE_MODE", "TOPK_LOGITS",
-                    "MAX_LOGIT_POSITIONS", "FIDELITY_WORK_DIR", "FIDELITY_SRC_ROOT"):
+                    "MAX_LOGIT_POSITIONS", "FIDELITY_WORK_DIR", "FIDELITY_SRC_ROOT",
+                    "QUANTIZER_SEED"):
             assert key in kernel.VARIANT_B_HEAD
+        # the quantizer factory must use the env-driven seed, not a hardcoded 42
+        assert "seed=_VB_QSEED" in kernel.VARIANT_B_HEAD
+        assert "seed=42" not in kernel.VARIANT_B_HEAD
 
     def test_missing_anchor_raises_on_synthetic(self, kernel):
         with pytest.raises(RuntimeError):
