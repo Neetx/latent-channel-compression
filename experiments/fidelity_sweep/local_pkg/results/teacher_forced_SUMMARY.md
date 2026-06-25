@@ -60,10 +60,32 @@ analysis `python ../analysis/teacher_forced_analysis.py`.
    larger margins. This is direct per-position evidence for the paper's "larger models absorb
    channel noise" hypothesis, and it sharpens it: absorption dominates decision-confidence.
 
+## Math500 control (does the attenuation generalize, or is it task-specific?)
+
+Re-running the same teacher-forced capture on Math500 (where the free-running tier gap is ~0)
+tests whether the attenuation mechanism is a general capacity property or task-conditioned.
+
+| tier | flip-rate | median REF margin | median \|top-1 logit diff\| |
+|---|---:|---:|---:|
+| light  | 2.4 % | 11.62 | 0.375 |
+| scaled | 3.2 % |  9.62 | 0.250 |
+
+| component (light − scaled) | MBPP+ | Math500 |
+|---|---:|---:|
+| raw flip-rate gap | +1.81 pp [+1.23,+2.40] | **−0.88 pp** [−1.43,−0.34] |
+| attenuation (per-margin) component | +1.39 pp (76 %) | **−0.18 pp** |
+
+**Margin-tipping (T2) is universal** — the flip-vs-margin gradient holds on Math500 too (light
+25.7 % at margin <1 down to 0.1 %). **But the tier gap and its attenuation are task-specific**: on
+Math500 the gap nearly vanishes and slightly reverses, and the attenuation component collapses from
++1.39 pp to −0.18 pp. The larger constellation's noise-absorption advantage is therefore not a
+general capacity property; it appears on code and not on math, mirroring the free-running tier-gap
+pattern (~40 pp on MBPP+, ~0 on Math500).
+
 ## Limitations
 
 - Single generation seed (42), single quantizer rotation (42), single problem subset, INT4 only,
-  MBPP+ (the Math500 control — where the free-running tier gap is ~0 — is a separate run).
+  two tasks (MBPP+ and the Math500 control).
 - The 128-position window and top-K=256 truncation (rank censored >256 at only ~0.2 % of
   positions). The decomposition is Oaxaca with light as the reference weighting; the qualitative
   split (attenuation ≫ margin distribution) is insensitive to the reference choice.

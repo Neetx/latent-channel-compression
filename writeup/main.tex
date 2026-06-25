@@ -407,6 +407,16 @@ larger-margin decisions.}
 \label{fig:tfmargin}
 \end{figure}
 
+\paragraph{Task-specificity of the attenuation.}
+Repeating the teacher-forced capture on Math500---where the free-running tier gap is near
+zero---separates the universal part of the mechanism from the task-specific part. Margin-tipping is
+universal: the flip-vs-margin gradient holds on Math500 for both tiers (light $25.7\%$ at margin
+${<}1$ down to $0.1\%$). The tier gap, however, does not generalize. The light$-$scaled flip-rate
+gap is $-0.88$ pp ($95\%$ CI $[-1.43,-0.34]$)---an order of magnitude smaller than MBPP+ and
+slightly reversed---and the attenuation component collapses from $+1.39$ pp to $-0.18$ pp. The
+larger constellation's noise-absorption advantage is therefore task-conditioned, not a general
+capacity property, mirroring the $\sim$40 pp (MBPP+) versus $\sim$0 (Math500) free-running contrast.
+
 \subsection{Independent cloud Math500 corroboration}
 
 An earlier fp32 T4 ladder at $n=250$ is flat within its uncertainty
@@ -495,9 +505,9 @@ confirmed across five quantizer rotations and decomposed into inner- and outer-l
 contributions; but the generation seed and problem subset remain singular. MedQA greedy is confounded, and MBPP+ contains only 378 available
 problems. Confidence intervals still
 allow effects of several percentage points. The trajectory window is
-128 positions and local capture uses $K=256$; the teacher-forced mechanism analysis is reported
-on MBPP+ at one generation seed (the matched-prefix KL it complements remains a selection-
-conditioned estimate). We evaluate fake quantization and the TurboQuant MSE core only.
+128 positions and local capture uses $K=256$; the teacher-forced mechanism analysis covers MBPP+
+and a Math500 control at one generation seed (the matched-prefix KL it complements remains a
+selection-conditioned estimate). We evaluate fake quantization and the TurboQuant MSE core only.
 
 The highest-value next steps are: (i) sweep the generation seed and problem subset on
 MBPP+ (the five-quantizer-rotation matrix is complete and confirms the light/scaled gap,
