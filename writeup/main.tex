@@ -475,6 +475,14 @@ synthetic regression tests implement this accounting. Historical cloud KL values
 produced by the legacy estimator are retained for auditability but are not compared
 numerically with Table~\ref{tab:trajectory}.
 
+\paragraph{Reproducibility.}
+The instrumentation, resumable orchestrators, analyzers, and per-result expected values are
+released; the upstream RecursiveMAS is pinned at commit \texttt{f95d512} and treated as read-only.
+A SHA256-plus-provenance manifest of every raw capture (paths relative to the capture root, no
+secrets) together with the runtime environment is committed, so a regenerated set can be checked
+byte-for-byte. Step-by-step commands for every table and figure are in the repository's
+reproducibility guide.
+
 \section{Discussion}
 
 The central result is a dissociation. Aggressive channel quantization produces

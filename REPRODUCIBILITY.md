@@ -195,13 +195,58 @@ retries. Local capture is top-K=256 and right-censored at 128 positions. The exp
 table is recorded in REPORT_08 and
 `experiments/fidelity_sweep/local_pkg/results/tier2_logit_fidelity_SUMMARY.md`.
 Raw NPZs are not committed because of their size; exact Tier-2 reproduction therefore
-requires running the capture conditions or obtaining a separately archived checksum
-bundle.
+requires running the capture conditions and verifying them against the committed checksum
+manifest (below).
+
+### Additional confirmatory analyses (rotation matrix, link ablation, mechanism)
+
+The same capture driver produces the three follow-up analyses. Each orchestrator is resumable and
+reuses the rotation-independent greedy REF where possible.
+
+```bash
+# Quantizer-rotation matrix (MBPP+): five INT4 rotations per tier, REF reused.
+.venv/bin/python experiments/fidelity_sweep/local_pkg/run_rotation_matrix.py
+.venv/bin/python experiments/fidelity_sweep/local_pkg/analysis/rotation_matrix_analysis.py
+
+# Inner/outer link ablation (MBPP+): one INT4 capture per link type per tier (_li/_lo tag).
+.venv/bin/python experiments/fidelity_sweep/local_pkg/run_links_ablation.py
+.venv/bin/python experiments/fidelity_sweep/local_pkg/analysis/links_ablation_analysis.py
+
+# Teacher-forced mechanism (MBPP+ and a Math500 control). Forced-decoding capture; runs at
+# batch size 1 only -- gate G0 (teacher-forcing the full-precision REF reproduces the
+# free-running REF exactly) holds at b=1 but not at b>1 (batched post-EOS padding diverges).
+.venv/bin/python experiments/fidelity_sweep/local_pkg/run_teacher_forced.py
+.venv/bin/python experiments/fidelity_sweep/local_pkg/run_teacher_forced.py \
+  --dataset math500 --out "$LCC_RUN_ROOT/teacher_forced_math500"
+.venv/bin/python experiments/fidelity_sweep/local_pkg/analysis/teacher_forced_analysis.py
+.venv/bin/python experiments/fidelity_sweep/local_pkg/analysis/teacher_forced_analysis.py \
+  --dataset math500 --tf-root "$LCC_RUN_ROOT/teacher_forced_math500"
+```
+
+Expected numbers are in `experiments/fidelity_sweep/local_pkg/results/` as
+`rotation_matrix_SUMMARY.md`, `links_ablation_SUMMARY.md`, and `teacher_forced_SUMMARY.md`.
+
+### Verify raw artifacts against the checksum manifest
+
+The raw NPZ captures are too large to commit, so a SHA256 + provenance manifest of every capture
+is committed at
+`experiments/fidelity_sweep/local_pkg/results/artifact_manifest.json`. It records, per artifact,
+the capture-root-relative path, byte size, SHA256, and provenance (config tag, links, quantizer
+seed, teacher-forced flag, upstream commit), plus the runtime environment (Python/PyTorch/CUDA/GPU
+and repository commit) -- no secrets or absolute paths. Re-verify a regenerated set:
+
+```bash
+.venv/bin/python experiments/fidelity_sweep/local_pkg/make_artifact_manifest.py \
+  --out /tmp/regenerated_manifest.json
+# compare the artifact lists (requires jq); identical SHA256s mean a byte-exact reproduction.
+diff <(jq -S .artifacts experiments/fidelity_sweep/local_pkg/results/artifact_manifest.json) \
+     <(jq -S .artifacts /tmp/regenerated_manifest.json)
+```
 
 ## 8. Rebuild the paper
 
 ```bash
-.venv/bin/python docs/figures/_generate_figures.py
+.venv/bin/python writeup/figures/make_figures.py
 cd writeup
 tectonic main.tex
 ```
@@ -215,8 +260,9 @@ The paper PDF is committed as `writeup/main.pdf`.
 - A single seed does not establish formal equivalence or a causal capacity law.
 - MedQA greedy REF is confounded by a first-option bias; use its sampled ladder for
   task-level interpretation.
-- Matched-prefix KL is approximate and selection-conditioned; it is not
-  teacher-forced full-trajectory KL.
+- Matched-prefix KL is approximate and selection-conditioned; the committed teacher-forced
+  per-position analysis is its aligned complement, but is itself MBPP+ and a Math500 control at
+  a single generation seed.
 - Exact stochastic sampled accuracies require the pinned software, checkpoint cache,
   sample order, and hardware/dtype path above.
 
