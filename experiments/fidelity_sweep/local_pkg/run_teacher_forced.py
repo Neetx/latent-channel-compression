@@ -33,6 +33,7 @@ DRIVER = LOCAL_PKG / "fidelity_local.py"
 REPO_ROOT = LOCAL_PKG.parents[2]
 sys.path.insert(0, str(LOCAL_PKG))
 from run_cell import claim_cell_lock, release_cell_lock  # noqa: E402
+from fidelity_local import build_config_tag  # noqa: E402  (single source of truth for tags)
 
 TIERS = {"light": "sequential_light", "scaled": "sequential_scaled"}
 BATCH = 1  # see module docstring: G0 holds only at b=1
@@ -62,16 +63,21 @@ def _run(python, style, dataset, n, bits, out_dir, log, extra):
     return rc
 
 
-def resolve_ref_npz(tier, out_tier, n, committed):
-    """b=1 full-precision REF npz that supplies the teacher tokens. Reuse a committed b=1 REF
-    for this tier (scaled), else a fresh one already in out_tier; the caller generates it if None."""
-    cr = committed.get(tier)
-    if cr and Path(cr).is_file():
-        return Path(cr), "committed"
-    local = out_tier / f"mbppplus_vb0_T3_n{n}_b{BATCH}_auto"
-    if _valid(local / f"fidelity_mbppplus_vb0_T3_n{n}_b{BATCH}_auto.json", n, False) and \
-            (local / "fidelity_logits.npz").is_file():
-        return local / "fidelity_logits.npz", "reused-local"
+def resolve_ref_npz(style, dataset, out_tier, n):
+    """b=1 full-precision REF npz that supplies the teacher tokens (and is the TF-REF reference).
+    Search, style/dataset-aware: a fresh one already in out_tier, the committed nested run layout
+    (sequential_{style}_{dataset}/), and the flat ~/lcc/fid_out tag. The nested path encodes the
+    style, so reuse can't cross tiers. Returns (npz_path, provenance) or (None, 'missing')."""
+    tag = build_config_tag(dataset, 0, 3, n, BATCH, "auto")
+    run_root = Path(os.environ.get("LCC_RUN_ROOT", Path.home() / "lcc" / "runs"))
+    candidates = [
+        (out_tier / tag, "fresh-local"),
+        (run_root / f"{style}_{dataset}" / tag, "committed-nested"),  # style already has 'sequential_'
+        (Path.home() / "lcc" / "fid_out" / tag, "committed-flat"),
+    ]
+    for d, how in candidates:
+        if (d / "fidelity_logits.npz").is_file() and _valid(d / f"fidelity_{tag}.json", n, False):
+            return d / "fidelity_logits.npz", how
     return None, "missing"
 
 
@@ -93,30 +99,26 @@ def main() -> int:
         return 4
     atexit.register(release_cell_lock, lock)
 
-    # committed b=1 REFs that can be reused as teacher sources (verified per tier by construction)
-    committed = {"scaled": Path.home() / "lcc" / "fid_out"
-                 / f"mbppplus_vb0_T3_n{args.n}_b{BATCH}_auto" / "fidelity_logits.npz"}
-
     print(f"=== TEACHER-FORCED {args.dataset} INT4 b={BATCH}  tiers={args.tiers}  out={out}  "
           f"{time.strftime('%Y-%m-%d %H:%M:%S')} ===", flush=True)
+    tf_tag = build_config_tag(args.dataset, 4, 3, args.n, BATCH, "auto", teacher_forced=True)
     summary = []
     for tier in args.tiers:
         style = TIERS[tier]
         out_tier = out / tier
         out_tier.mkdir(parents=True, exist_ok=True)
-        tf_json = (out_tier / f"mbppplus_vb4_T3_n{args.n}_b{BATCH}_auto_tf"
-                   / f"fidelity_mbppplus_vb4_T3_n{args.n}_b{BATCH}_auto_tf.json")
+        tf_json = out_tier / tf_tag / f"fidelity_{tf_tag}.json"
         if _valid(tf_json, args.n, True):
             print(f"[skip] {tier}: valid TF result exists", flush=True)
             summary.append({"tier": tier, "status": "reused"}); continue
 
-        ref_npz, how = resolve_ref_npz(tier, out_tier, args.n, committed)
+        ref_npz, how = resolve_ref_npz(style, args.dataset, out_tier, args.n)
         if ref_npz is None:
             print(f"[ref] {tier}: generating fresh b=1 REF", flush=True)
             if _run(args.python, style, args.dataset, args.n, 0, out_tier,
                     out_tier / "ref_b1.log", []) != 0:
                 print(f"[fatal] {tier} REF failed", file=sys.stderr); return 3
-            ref_npz, how = resolve_ref_npz(tier, out_tier, args.n, committed)
+            ref_npz, how = resolve_ref_npz(style, args.dataset, out_tier, args.n)
             if ref_npz is None:
                 print(f"[fatal] {tier} REF produced no valid npz", file=sys.stderr); return 3
         print(f"[ref] {tier}: teacher tokens from {ref_npz} ({how})", flush=True)
