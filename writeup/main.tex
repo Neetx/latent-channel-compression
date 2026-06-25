@@ -399,8 +399,8 @@ $[+1.23,+2.40]$, problem-clustered bootstrap) shows the larger tier's robustness
 mainly a matter of deciding more confidently: the margin-distribution component is only $+0.43$ pp
 ($24\%$), while $+1.39$ pp ($76\%$) comes from the channel perturbing the larger model's logits
 \emph{less} (the matched-margin flip rate is roughly halved). This is direct per-position evidence
-that the scaled constellation \emph{absorbs} the latent-channel noise, and it refines the
-hypothesis below: absorption dominates decision-confidence.
+that the scaled constellation \emph{absorbs} the latent-channel noise, and it sharpens the
+``larger models absorb channel noise'' reading: absorption dominates decision-confidence.
 
 \begin{figure}[t]
 \centering
@@ -507,25 +507,27 @@ conditioned estimate). We evaluate fake quantization and the TurboQuant MSE core
 
 The highest-value next steps are: (i) sweep the generation seed and problem subset on
 MBPP+ (the five-quantizer-rotation matrix is complete and confirms the light/scaled gap,
-$+40.2$ pp $[+34.9,+45.7]$); (ii) force REF tokens in both conditions and measure aligned
-KL, rank, and top-1 margins; (iii) sweep 2/3/4/6/8 bits with an unrotated scalar
-baseline; (iv) implement the QJL residual; (v) test a tool-sensitive deliberation
-topology and a high-baseline non-math task; and (vi) measure serialized bytes,
-latency, wall-clock time, and VRAM. Confirmatory claims should pre-specify the primary
-estimand, equivalence margin, seed pooling, and multiple-comparison policy.
+$+40.2$ pp $[+34.9,+45.7]$); (ii) extend the aligned mechanism analysis to a second task and
+to additional bit rates ($2/3/4/6/8$), testing whether the margin-tipping/attenuation account
+holds off MBPP+ and whether the two channels separate at higher rates; (iii) implement the QJL
+residual; (iv) test a tool-sensitive deliberation topology and a high-baseline non-math task;
+and (v) measure serialized bytes, latency, wall-clock time, and VRAM. Confirmatory claims should
+pre-specify the primary estimand, equivalence margin, seed pooling, and multiple-comparison policy.
 
 \section{Conclusion}
 
 The latent channel of RecursiveMAS tolerates aggressive data-oblivious fake
-quantization well in aggregate accuracy across the completed cells.
-That robustness coexists with real behavioral change: individual answers churn and
-greedy trajectories often diverge. The scaled MBPP+ tier is substantially more
-trajectory-robust than the light tier --- robust across five quantizer rotations but
-task-specific (it does not reproduce on Math500) --- so it is a replicated association
-worth a causal mechanism test, not yet a capacity law. The practical conclusion is precise: low-bit latent communication is
-a credible systems direction, but claims of losslessness require stronger statistics,
-position-aligned fidelity, broader tasks and architectures, and real transport
-measurements.
+quantization well in aggregate accuracy across the completed cells, yet that robustness
+coexists with real behavioral change: individual answers churn and greedy trajectories
+often diverge. A position-aligned analysis shows the drift is margin-tipping---the channel
+perturbs every token decision slightly but flips only the low-margin ones---and that the
+scaled MBPP+ tier is more trajectory-robust mainly because it attenuates the perturbation,
+and only secondarily because it decides with larger margins. This tier contrast is robust
+across five quantizer rotations but task-specific (it does not reproduce on Math500), so the
+noise-absorption it reflects is itself task-conditioned, not a capacity law. The practical
+conclusion is precise: low-bit latent communication is a credible systems direction, but
+claims of losslessness require stronger statistics, broader tasks and architectures, and real
+transport measurements.
 
 \bibliographystyle{plainnat}
 \bibliography{references}
