@@ -40,8 +40,8 @@ $+40.2$ pp (95\% CI $[+34.9,+45.7]$) gap stable across five quantizer rotations 
 on math---and it is distributed across the channel: quantizing only the intra-model or only the
 cross-model links reproduces nearly all of it. A teacher-forced, position-aligned analysis shows
 the drift is margin-tipping---the channel perturbs every next-token distribution slightly but flips
-only low-margin decisions---and that the larger tier is robuster mainly because it attenuates that
-perturbation ($76\%$ of the gap) rather than because it decides more confidently ($24\%$). The
+only low-margin decisions---and that the larger tier is more robust mainly because it attenuates
+that perturbation ($76\%$ of the gap) rather than because it decides more confidently ($24\%$). The
 evidence supports aggregate answer robustness under aggressive fake quantization, not bit-exact
 losslessness, trajectory preservation, or a deployed bandwidth saving.
 \end{abstract}
@@ -416,8 +416,9 @@ Repeating the teacher-forced capture on Math500---where the free-running tier ga
 zero---separates the universal part of the mechanism from the task-specific part. Margin-tipping is
 universal: the flip-vs-margin gradient holds on Math500 for both tiers (light $25.7\%$ at margin
 ${<}1$ down to $0.1\%$). The tier gap, however, does not generalize. The light$-$scaled flip-rate
-gap is $-0.88$ pp ($95\%$ CI $[-1.43,-0.34]$)---an order of magnitude smaller than MBPP+ and
-slightly reversed---and the attenuation component collapses from $+1.39$ pp to $-0.18$ pp. The
+gap is $-0.88$ pp ($95\%$ CI $[-1.43,-0.34]$)---about half the magnitude of the MBPP+ gap and
+slightly reversed in sign---and the attenuation component collapses by nearly an order of
+magnitude, from $+1.39$ pp to $-0.18$ pp. The
 larger constellation's noise-absorption advantage is therefore task-conditioned, not a general
 capacity property, mirroring the $\sim$40 pp (MBPP+) versus $\sim$0 (Math500) free-running contrast.
 
