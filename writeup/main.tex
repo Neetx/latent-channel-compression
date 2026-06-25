@@ -22,30 +22,24 @@ Recursive Multi-Agent System: Accuracy, Churn, and Trajectory Fidelity}
 
 \begin{abstract}
 Aggressively quantizing the latent communication channel of a recursive multi-agent
-language-model system---the dense activation vectors its agents exchange in place of text,
-here reduced to 2--4 bits per coordinate---preserves aggregate task accuracy but does
-\emph{not} preserve the sequences of tokens the system generates. Whether such
-low-bit inter-agent messages are safe cannot be decided from single-vector reconstruction
-error: a small channel perturbation may be absorbed, may flip an individual answer, or may
-push greedy decoding across token-decision boundaries. We insert the data-oblivious
-mean-squared-error core of TurboQuant into every latent link of the released RecursiveMAS
-system---without changing weights or prompts---and separately measure channel
-reconstruction, final-answer behavior, and token-trajectory fidelity across five task/tier
+language-model system---the dense activation vectors its agents exchange in place of text, here
+reduced to 2--4 bits per coordinate---preserves aggregate task accuracy but not the sequences of
+tokens the system generates, a question single-vector reconstruction error cannot settle. We
+insert the data-oblivious mean-squared-error core of TurboQuant into every latent link of the
+released RecursiveMAS system---without changing weights or prompts---and separately measure
+channel reconstruction, final-answer behavior, and token-trajectory fidelity across five task/tier
 cells on a single consumer GPU. Across the four non-confounded cells, paired greedy accuracy
-deltas stay within $\pm2.4$ pp with confidence intervals spanning zero, yet 4.4--10\% of
-individual answers flip and 51--93\% of greedy trajectories diverge within 128 tokens. The
-trajectory effect is strongly tier- and task-dependent: on code the larger constellation is
-far more trajectory-robust than the smaller one---a $+40.2$ pp (95\% CI $[+34.9,+45.7]$)
-divergence gap that is stable across five quantizer rotations---but it nearly vanishes on
-math, making it a replicated yet task-specific association rather than a model-capacity law.
-Quantizing only the intra-model or only the cross-model links reproduces nearly the entire
-trajectory drift on both tiers, so the effect is distributed across the channel rather than
-localized to one link type. A teacher-forced, position-aligned analysis shows the drift is a
-margin-tipping phenomenon---the channel perturbs every next-token distribution slightly but only
-flips low-margin decisions---and that the larger tier is robuster mainly because it attenuates
-that perturbation ($76\%$ of the gap) rather than because it decides more confidently ($24\%$).
-The evidence supports aggregate answer robustness under aggressive fake quantization, not
-bit-exact losslessness, trajectory preservation, or a deployed bandwidth saving.
+deltas stay within $\pm2.4$ pp (confidence intervals spanning zero), yet 4--10\% of individual
+answers flip and 51--93\% of greedy trajectories diverge within 128 tokens. This trajectory drift
+is strongly tier- and task-dependent---on code the larger constellation is far more robust, a
+$+40.2$ pp (95\% CI $[+34.9,+45.7]$) gap stable across five quantizer rotations but nearly absent
+on math---and it is distributed across the channel: quantizing only the intra-model or only the
+cross-model links reproduces nearly all of it. A teacher-forced, position-aligned analysis shows
+the drift is margin-tipping---the channel perturbs every next-token distribution slightly but flips
+only low-margin decisions---and that the larger tier is robuster mainly because it attenuates that
+perturbation ($76\%$ of the gap) rather than because it decides more confidently ($24\%$). The
+evidence supports aggregate answer robustness under aggressive fake quantization, not bit-exact
+losslessness, trajectory preservation, or a deployed bandwidth saving.
 \end{abstract}
 
 \section{Introduction}
@@ -88,11 +82,11 @@ reasoning text is produced. Concretely, we contribute:
   \item a teacher-forced, position-aligned mechanism for the drift: it is margin-tipping (flips
   concentrate at low-margin token decisions), and the larger tier's robustness is mostly
   attenuation of the perturbation ($76\%$ of the gap) rather than larger decision margins ($24\%$);
-  \item an instrumentation-only, reproducible pipeline that quantizes all RecursiveMAS
-  latent links without changing the released models, prompts, or evaluation; and
-  \item a corrected top-$K$ trajectory analysis (primary-call pairing, length-censored
-  first-divergence hazard) plus documentation of two measurement failures: pre-Ampere bf16
-  numerical collapse and a greedy multiple-choice option bias.
+  \item an instrumentation-only, reproducible pipeline---quantizing all RecursiveMAS latent links
+  without changing the released models, prompts, or evaluation---with a corrected top-$K$
+  trajectory analysis (primary-call pairing, length-censored first-divergence hazard) and
+  documentation of two measurement failures: pre-Ampere bf16 numerical collapse and a greedy
+  multiple-choice option bias.
 \end{itemize}
 
 This is an empirical study, not a new compression algorithm. We evaluate the MSE
