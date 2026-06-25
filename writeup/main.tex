@@ -1,6 +1,9 @@
-\documentclass[11pt]{article}
+\documentclass{article}
+% NB: the arXiv bundle adds \pdfoutput=1 here to force pdfLaTeX (it breaks the local
+% XeTeX/tectonic build by selecting hyperref's pdftex driver, so it is bundle-only).
 
-\usepackage[margin=1in]{geometry}
+\usepackage{arxiv}                 % single-column preprint style (provides geometry + fancyhdr)
+
 \usepackage{natbib}
 \usepackage{booktabs}
 \usepackage{amsmath}
@@ -12,10 +15,11 @@
 \newcommand{\method}{TurboQuant-MSE\xspace}
 \newcommand{\erel}{E_{\mathrm{rel}}}
 
-\title{Quantizing the Latent Communication Channel\\
-of a Recursive Multi-Agent System}
+\renewcommand{\shorttitle}{Quantizing a Recursive MAS Latent Channel}
+
+\title{Quantizing the Latent Communication Channel of a Recursive Multi-Agent System}
 \author{Antonio Pastorelli}
-\date{2026}
+\date{}
 
 \begin{document}
 \maketitle

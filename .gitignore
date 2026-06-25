@@ -48,6 +48,10 @@ experiments/results/
 *.log
 wandb/
 
+# arXiv submission bundle (regenerate with writeup/make_arxiv_bundle.sh)
+writeup/arxiv_submission/
+writeup/arxiv_submission.tar.gz
+
 # LaTeX build artifacts (writeup/) — main.pdf is kept intentionally
 *.aux
 *.bbl
