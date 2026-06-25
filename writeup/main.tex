@@ -38,7 +38,10 @@ trajectory effect is strongly tier- and task-dependent: on code the larger const
 far more trajectory-robust than the smaller one---a $+40.2$ pp (95\% CI $[+34.9,+45.7]$)
 divergence gap that is stable across five quantizer rotations---but it nearly vanishes on
 math, making it a replicated yet task-specific association rather than a model-capacity law.
-The evidence supports aggregate answer robustness under aggressive fake quantization, not
+Quantizing only the intra-model or only the cross-model links reproduces nearly the entire
+trajectory drift on both tiers, so the effect is distributed across the channel rather than
+localized to one link type. The evidence supports aggregate answer robustness under aggressive
+fake quantization, not
 bit-exact losslessness, trajectory preservation, or a deployed bandwidth saving.
 \end{abstract}
 
@@ -76,7 +79,9 @@ reasoning text is produced. Concretely, we contribute:
   \item a same-task tier contrast---on code the scaled constellation is far more
   trajectory-robust than the light one (a $+40.2$ pp divergence gap)---shown to be
   \emph{task-specific} (it nearly vanishes on math) and robust across five quantizer
-  rotations, hence an association rather than a capacity law;
+  rotations, hence an association rather than a capacity law; with a link-type ablation
+  showing the drift is not localized---quantizing only the inner (intra-model) or only the
+  outer (cross-model) links each reproduces nearly the full divergence on both tiers;
   \item an instrumentation-only, reproducible pipeline that quantizes all RecursiveMAS
   latent links without changing the released models, prompts, or evaluation; and
   \item a corrected top-$K$ trajectory analysis (primary-call pairing, length-censored
@@ -327,6 +332,46 @@ contrast of $+40.2$ pp, 95\% CI $[+34.9,+45.7]$ within $128$ positions and $+31.
 $[+25.9,+37.6]$ within the first $25$ (the length-robust early window). The effect is thus
 robust to the quantizer rotation; only the generation seed and problem subset remain fixed.
 
+\paragraph{Localizing the drift: inner versus outer links.}
+Each tier exposes two link types---eight intra-model (\emph{inner}) recursion adapters and
+eight cross-model (\emph{outer}) adapters. To ask whether the trajectory drift is carried by a
+specific link type, we re-ran the MBPP+ INT4 capture quantizing exactly one type at a time,
+reusing the shared full-precision REF (Table~\ref{tab:links}). The drift is \emph{not}
+localized: on both tiers, quantizing the inner links alone or the outer links alone each
+reproduces essentially the entire all-links divergence---every single-link value lies within
+$4$ pp of its all-links value, and the cumulative first-divergence curves overlap. Either
+channel alone is therefore sufficient to reroute greedy decoding; the two are redundant rather
+than separable at this bit rate. The light/scaled robustness gap persists \emph{within} each
+link type ($\sim$40 pp for both inner-only and outer-only), so the tier effect is a property of
+scale present in both channels, not something one link type carries. The one asymmetry is at
+the answer level: the small all-links accuracy cost on scaled ($-2.0$ pp) comes mainly from the
+outer links (outer-only $-1.6$ pp), whereas inner-only quantization leaves accuracy at the REF
+value---consistent with the channel-wide pattern of perturbed trajectories under preserved
+answers.
+
+\begin{table}[t]
+\centering
+\caption{\textbf{The trajectory drift is not localized to a link type.} MBPP+ INT4 greedy
+divergence within 128 tokens and final accuracy when quantizing all inter-agent links, only the
+eight inner (intra-model) links, or only the eight outer (cross-model) links. The \emph{all}
+rows reproduce the headline numbers; each single-link condition recovers nearly the whole
+divergence on both tiers.}
+\label{tab:links}
+\begin{tabular}{llccc}
+\toprule
+tier & quantized links & divergence within 128 & accuracy & $\Delta$ acc.\ vs.\ REF \\
+\midrule
+light  & all   & 92.8\% & 36.4 & $\pm0.0$ \\
+light  & inner & 88.8\% & 36.4 & $\pm0.0$ \\
+light  & outer & 94.4\% & 35.6 & $-0.8$ \\
+\midrule
+scaled & all   & 51.2\% & 72.4 & $-2.0$ \\
+scaled & inner & 50.4\% & 74.8 & $+0.4$ \\
+scaled & outer & 52.0\% & 72.8 & $-1.6$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
 \subsection{Independent cloud Math500 corroboration}
 
 An earlier fp32 T4 ladder at $n=250$ is flat within its uncertainty
@@ -409,9 +454,9 @@ fidelity of reconstructed messages, not end-to-end throughput.
 \section{Limitations and next steps}
 
 All local cells use one machine and a single generation seed. The \{math, code\} $\times$
-\{light, scaled\} $2\times2$ is now crossed, and the MBPP+ tier contrast is additionally
-confirmed across five quantizer rotations; but the generation seed and problem subset
-remain singular. MedQA greedy is confounded, and MBPP+ contains only 378 available
+\{light, scaled\} $2\times2$ is now crossed, the MBPP+ tier contrast is additionally
+confirmed across five quantizer rotations and decomposed into inner- and outer-link
+contributions; but the generation seed and problem subset remain singular. MedQA greedy is confounded, and MBPP+ contains only 378 available
 problems. Confidence intervals still
 allow effects of several percentage points. The trajectory window is
 128 positions, local capture uses $K=256$, and matched-prefix KL is not a
