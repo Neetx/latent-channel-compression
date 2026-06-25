@@ -25,25 +25,22 @@ TIERS = [("light", 2), ("scaled", 1)]
 LINKSETS = [("all", ""), ("inner", "_li"), ("outer", "_lo")]
 
 
-def find(roots, tag):
+def resolve_dir(roots, style, dataset, tag):
+    """Containing dir of a condition's captures, across all three capture layouts: the
+    run_cell nested layout (``sequential_{style}_{dataset}/tag``), the flat ``~/lcc/fid_out``
+    tag, and the run_links_ablation flat tag. Mirrors divergence_hazard.resolve_npz so the
+    analysis works no matter how REF/all/inner/outer were regenerated."""
+    flat = tag[len(f"{dataset}_"):] if tag.startswith(f"{dataset}_") else tag
     for root in roots:
-        p = root / tag / "fidelity_logits.npz"
-        if p.is_file():
-            return p
+        for cand in (root / f"sequential_{style}_{dataset}" / tag, root / tag, root / flat):
+            if (cand / "fidelity_logits.npz").is_file():
+                return cand
     return None
 
 
-def find_json(roots, tag):
-    for root in roots:
-        p = root / tag / f"fidelity_{tag}.json"
-        if p.is_file():
-            return p
-    return None
-
-
-def accuracy(roots, tag):
-    p = find_json(roots, tag)
-    if not p:
+def accuracy(d, tag):
+    p = d / f"fidelity_{tag}.json"
+    if not p.is_file():
         return None
     try:
         return json.load(open(p)).get("final_accuracy")
@@ -69,21 +66,23 @@ def main() -> int:
     missing = 0
     table = {}
     for tier, batch in TIERS:
-        ref = find(roots, f"mbppplus_vb0_T3_n{n}_b{batch}_auto")
-        ref_acc = accuracy(roots, f"mbppplus_vb0_T3_n{n}_b{batch}_auto")
-        print(f"{tier:7} {'REF':6} {str(ref_acc):>6} {'--':>10}")
-        if not ref:
+        ref_tag = f"mbppplus_vb0_T3_n{n}_b{batch}_auto"
+        ref_dir = resolve_dir(roots, tier, "mbppplus", ref_tag)
+        if not ref_dir:
             print(f"{tier:7} REF MISSING"); missing += 1; continue
+        ref = ref_dir / "fidelity_logits.npz"
+        print(f"{tier:7} {'REF':6} {str(accuracy(ref_dir, ref_tag)):>6} {'--':>10}")
         primary = (n + batch - 1) // batch
         for label, sfx in LINKSETS:
             tag = f"mbppplus_vb4_T3_n{n}_b{batch}_auto{sfx}"
-            intd = find(roots, tag)
-            if not intd:
+            d = resolve_dir(roots, tier, "mbppplus", tag)
+            if not d:
                 print(f"{tier:7} {label:6} {'--':>6} {'MISSING':>10}"); missing += 1; continue
+            intd = d / "fidelity_logits.npz"
             t, e, L = dh.first_divergence(ref, intd, primary)
             S, _, _ = dh.kaplan_meier(t, e)
             evt = float(np.mean(e)) * 100
-            acc = accuracy(roots, tag)
+            acc = accuracy(d, tag)
             probes = "  ".join(f"{1.0 - S[p]:.3f}" for p in dh.PROBES)
             print(f"{tier:7} {label:6} {str(acc):>6} {evt:9.1f}% {int(np.median(L)):8d}  {probes}")
             table[(tier, label)] = evt

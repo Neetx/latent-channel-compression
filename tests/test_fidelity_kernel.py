@@ -79,12 +79,18 @@ class TestLocalBackendIsolation:
     def test_fidelity_local_quantizer_seed_plumbing(self):
         src = LOCAL_DRIVER_PATH.read_text()
         assert '"QUANTIZER_SEED": str(args.quantizer_seed)' in src   # propagated to child env
-        assert "_qs{args.quantizer_seed}" in src                     # tag suffix for non-42 seeds
         assert '"quantizer_seed": args.quantizer_seed' in src        # recorded in the result JSON
         local = _load_path("fidelity_local_qs", LOCAL_DRIVER_PATH)
         p = local.build_parser()
         assert p.parse_args(["--bits", "4"]).quantizer_seed == 42    # default = original condition
         assert p.parse_args(["--bits", "4", "--quantizer-seed", "7"]).quantizer_seed == 7
+        # The non-42 seed appends a _qs suffix to the condition tag; seed 42 stays unsuffixed so
+        # the original results keep resolving. (Behavioural check via the shared tag builder,
+        # robust to where the suffix is constructed.)
+        assert (local.build_config_tag("mbppplus", 4, 3, 250, 2, "auto", quantizer_seed=42)
+                == "mbppplus_vb4_T3_n250_b2_auto")
+        assert local.build_config_tag("mbppplus", 4, 3, 250, 2, "auto",
+                                      quantizer_seed=7).endswith("_qs7")
 
     def test_run_cell_validates_capture_contract(self, tmp_path):
         runner = _load_path("run_cell_test", RUN_CELL_PATH)
