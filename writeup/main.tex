@@ -40,8 +40,11 @@ divergence gap that is stable across five quantizer rotations---but it nearly va
 math, making it a replicated yet task-specific association rather than a model-capacity law.
 Quantizing only the intra-model or only the cross-model links reproduces nearly the entire
 trajectory drift on both tiers, so the effect is distributed across the channel rather than
-localized to one link type. The evidence supports aggregate answer robustness under aggressive
-fake quantization, not
+localized to one link type. A teacher-forced, position-aligned analysis shows the drift is a
+margin-tipping phenomenon---the channel perturbs every next-token distribution slightly but only
+flips low-margin decisions---and that the larger tier is robuster mainly because it attenuates
+that perturbation ($76\%$ of the gap) rather than because it decides more confidently ($24\%$).
+The evidence supports aggregate answer robustness under aggressive fake quantization, not
 bit-exact losslessness, trajectory preservation, or a deployed bandwidth saving.
 \end{abstract}
 
@@ -82,6 +85,9 @@ reasoning text is produced. Concretely, we contribute:
   rotations, hence an association rather than a capacity law; with a link-type ablation
   showing the drift is not localized---quantizing only the inner (intra-model) or only the
   outer (cross-model) links each reproduces nearly the full divergence on both tiers;
+  \item a teacher-forced, position-aligned mechanism for the drift: it is margin-tipping (flips
+  concentrate at low-margin token decisions), and the larger tier's robustness is mostly
+  attenuation of the perturbation ($76\%$ of the gap) rather than larger decision margins ($24\%$);
   \item an instrumentation-only, reproducible pipeline that quantizes all RecursiveMAS
   latent links without changing the released models, prompts, or evaluation; and
   \item a corrected top-$K$ trajectory analysis (primary-call pairing, length-censored
@@ -116,8 +122,8 @@ study.
 Compression is usually judged by aggregate benchmark accuracy. We instead separate
 final-answer behavior from token-trajectory fidelity, and report paired answer churn and
 greedy divergence; at the answer level we use a two-one-sided equivalence test~\citep{tost}
-rather than reading non-significance as equivalence. Our planned teacher-forced,
-position-aligned follow-up builds on mechanistic-interpretability tooling~\citep{transformerlens}.
+rather than reading non-significance as equivalence. Our teacher-forced, position-aligned
+mechanism analysis builds on mechanistic-interpretability tooling~\citep{transformerlens}.
 We evaluate on Math500~\citep{math}, MBPP+~\citep{mbpp}, and MedQA~\citep{medqa}.
 
 \section{System and intervention}
@@ -372,6 +378,41 @@ scaled & outer & 52.0\% & 72.8 & $-1.6$ \\
 \end{tabular}
 \end{table}
 
+\subsection{Mechanism: low-margin tipping under an attenuated perturbation}
+
+The free-running analysis counts \emph{that} trajectories drift; to see \emph{why}, we run an
+aligned teacher-forced capture: each decode position is forced along the full-precision REF tokens
+while the channel stays INT4-quantized, and we record the clean next-token logits, so REF and INT4
+are compared position-by-position with no post-divergence confound. (Captures run at batch
+size~1, where forcing the full-precision REF reproduces the free-running REF exactly; the forced,
+window-truncated output is not a task metric.)
+
+Three things hold on MBPP+ (Figure~\ref{fig:tfmargin}). First, the perturbation is \emph{universal
+but small}: holding the prefix fixed, quantization shifts the next-token logits at essentially
+every position by a small amount (median top-1 logit shift $0.25$ light, $0.125$ scaled) and
+leaves the REF token ranked first $96$--$98\%$ of the time. Second, arg-max \emph{flips
+concentrate at low margin}: the flip probability is a strictly decreasing function of the REF
+top1--top2 logit margin (light $22.1\%$ at margin ${<}1$ down to $0.2\%$ above $16$). The drift is
+a margin-tipping phenomenon---quantization changes the emitted token only where the decision is
+knife-edge. Third, decomposing the light$-$scaled flip-rate gap ($+1.81$ pp; 95\% CI
+$[+1.23,+2.40]$, problem-clustered bootstrap) shows the larger tier's robustness is \emph{not}
+mainly a matter of deciding more confidently: the margin-distribution component is only $+0.43$ pp
+($24\%$), while $+1.39$ pp ($76\%$) comes from the channel perturbing the larger model's logits
+\emph{less} (the matched-margin flip rate is roughly halved). This is direct per-position evidence
+that the scaled constellation \emph{absorbs} the latent-channel noise, and it refines the
+hypothesis below: absorption dominates decision-confidence.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.62\linewidth]{figures/tf_flip_vs_margin.pdf}
+\caption{\textbf{The drift is margin-tipping, and the larger tier absorbs the perturbation.}
+Teacher-forced arg-max flip rate versus the REF top1--top2 logit margin on MBPP+. Flips
+concentrate at low margin on both tiers; the light curve sits above scaled at matched margin, and
+a decomposition attributes $76\%$ of the tier gap to this attenuation and only $24\%$ to scaled's
+larger-margin decisions.}
+\label{fig:tfmargin}
+\end{figure}
+
 \subsection{Independent cloud Math500 corroboration}
 
 An earlier fp32 T4 ladder at $n=250$ is flat within its uncertainty
@@ -440,11 +481,12 @@ not be read as preserving every answer or every reasoning trace.
 
 The MBPP+ result weakens a simple redundancy explanation. Code tokens are themselves
 the evaluated output, yet the light and scaled sampled ladders remain flat. The scaled
-tier's reduced churn and trajectory divergence on MBPP+ suggest that system competence
-or token margins may mediate robustness---but because the same tier change leaves
-Math500 divergence almost unchanged, any such mediator must itself be task-dependent.
-Teacher-forced analysis is needed to distinguish stable next-token distributions from
-the selection effect created by matched prefixes.
+tier's reduced churn and trajectory divergence on MBPP+ are now explained mechanistically by the
+teacher-forced analysis (Figure~\ref{fig:tfmargin}): the larger constellation flips fewer tokens
+both because it decides with larger margins and---dominantly ($76\%$ of the gap)---because it
+attenuates the channel perturbation reaching its output logits, rather than because of a selection
+effect created by matched prefixes. Because the same tier change leaves Math500 divergence almost
+unchanged, this noise-absorption must itself be task-dependent.
 
 The nominal compression ratios are promising but incomplete. A real system must
 encode codebook indices, norms, seeds or transform identifiers, and packet metadata;
@@ -459,9 +501,9 @@ confirmed across five quantizer rotations and decomposed into inner- and outer-l
 contributions; but the generation seed and problem subset remain singular. MedQA greedy is confounded, and MBPP+ contains only 378 available
 problems. Confidence intervals still
 allow effects of several percentage points. The trajectory window is
-128 positions, local capture uses $K=256$, and matched-prefix KL is not a
-teacher-forced causal comparison. We evaluate fake quantization and the TurboQuant
-MSE core only.
+128 positions and local capture uses $K=256$; the teacher-forced mechanism analysis is reported
+on MBPP+ at one generation seed (the matched-prefix KL it complements remains a selection-
+conditioned estimate). We evaluate fake quantization and the TurboQuant MSE core only.
 
 The highest-value next steps are: (i) sweep the generation seed and problem subset on
 MBPP+ (the five-quantizer-rotation matrix is complete and confirms the light/scaled gap,

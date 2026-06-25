@@ -123,6 +123,31 @@ ax.legend(loc="lower center")
 fig.savefig(OUT / "cloud_ladder.pdf")
 plt.close(fig)
 
-print("wrote:", OUT / "dissociation.pdf", OUT / "tier_task_divergence.pdf", OUT / "cloud_ladder.pdf")
+# ----------------------------------------------------------------------------
+# Figure 4 — teacher-forced mechanism: arg-max flip probability vs REF token margin.
+# The margin-tipping signature (T2): flips concentrate at low margin on both tiers; the
+# light curve sits above scaled (T3 / attenuation). Values: results/teacher_forced_SUMMARY.md.
+# ----------------------------------------------------------------------------
+margin_lab = ["<1", "1-2", "2-4", "4-8", "8-16", ">16"]
+tf_light = [22.1, 4.2, 1.9, 1.0, 0.4, 0.2]
+tf_scaled = [11.7, 2.6, 1.4, 1.7, 0.5, 0.0]
+xm = np.arange(len(margin_lab))
+fig, ax = plt.subplots(figsize=(5.2, 3.0))
+ax.plot(xm, tf_light, "-o", color=OI["sky"], label="light (~1.5B)", lw=1.6, ms=5)
+ax.plot(xm, tf_scaled, "-s", color=OI["vermillion"], label="scaled (~4B)", lw=1.6, ms=5)
+for xi, lv, sv in zip(xm, tf_light, tf_scaled):
+    ax.annotate(f"{lv:.1f}", (xi, lv), ha="center", va="bottom", fontsize=6.5, xytext=(0, 3), textcoords="offset points")
+    ax.annotate(f"{sv:.1f}", (xi, sv), ha="center", va="top", fontsize=6.5, xytext=(0, -4), textcoords="offset points")
+ax.set_xticks(xm)
+ax.set_xticklabels(margin_lab)
+ax.set_xlabel("REF top-1 − top-2 logit margin")
+ax.set_ylabel("arg-max flip rate (%)")
+ax.set_ylim(0, 25)
+ax.legend(loc="upper right")
+fig.savefig(OUT / "tf_flip_vs_margin.pdf")
+plt.close(fig)
+
+print("wrote:", OUT / "dissociation.pdf", OUT / "tier_task_divergence.pdf", OUT / "cloud_ladder.pdf",
+      OUT / "tf_flip_vs_margin.pdf")
 print(f"  MBPP+ rotation means: light={mbpp_light.mean():.1f}+-{mbpp_light.std():.1f}  "
       f"scaled={mbpp_scaled.mean():.1f}+-{mbpp_scaled.std():.1f}")
