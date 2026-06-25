@@ -112,6 +112,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--topk", type=int, default=256, help="top-K logits captured per decode position")
     p.add_argument("--maxpos", type=int, default=128, help="cap on decode positions stored per generate()")
     p.add_argument("--links", default="all", choices=["all", "inner", "outer"])
+    p.add_argument("--teacher-forced", action="store_true",
+                   help="aligned mechanism capture: force decoding along the paired REF tokens "
+                        "(requires --tf-ref-npz) while the channel stays quantized; records clean "
+                        "per-position logits and appends a _tf config-tag suffix")
+    p.add_argument("--tf-ref-npz", default="",
+                   help="path to the paired full-precision REF fidelity_logits.npz supplying the "
+                        "teacher tokens (required when --teacher-forced)")
     p.add_argument("--device", default="cuda")
     p.add_argument("--temperature", type=float, default=0.6)
     p.add_argument("--top_p", type=float, default=0.95)
@@ -122,22 +129,34 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def build_config_tag(dataset, bits, t, n_samples, batch_size, dtype,
-                     quantizer_seed=42, links="all") -> str:
-    """Single source of truth for a condition's directory/file tag. The quantizer seed
-    and the link-ablation setting append optional suffixes; seed 42 with all links keeps
-    the original tag, so prior results and analyzers keep resolving unchanged. Orchestrators
-    (run_rotation_matrix / run_links_ablation) and analyzers must use this exact tag."""
+                     quantizer_seed=42, links="all", teacher_forced=False) -> str:
+    """Single source of truth for a condition's directory/file tag. The quantizer seed,
+    the link-ablation setting, and the teacher-forced mode append optional suffixes; seed 42
+    with all links and free-running keeps the original tag, so prior results and analyzers
+    keep resolving unchanged. Orchestrators (run_rotation_matrix / run_links_ablation /
+    run_teacher_forced) and analyzers must use this exact tag."""
     tag = f"{dataset}_vb{bits}_T{t}_n{n_samples}_b{batch_size}_{dtype}"
     if quantizer_seed != 42:
         tag += f"_qs{quantizer_seed}"
     if links != "all":
         tag += f"_l{links[0]}"  # _li / _lo for inner/outer-only ablation
+    if teacher_forced:
+        tag += "_tf"            # aligned (forced-decoding) mechanism capture
     return tag
 
 
 def main() -> int:
     args = build_parser().parse_args()
     capture = not args.no_capture
+
+    if args.teacher_forced:
+        if not capture:
+            print("[fatal] --teacher-forced requires capture (drop --no-capture)", file=sys.stderr)
+            return 2
+        if not args.tf_ref_npz or not Path(args.tf_ref_npz).is_file():
+            print(f"[fatal] --teacher-forced requires --tf-ref-npz pointing at the paired REF "
+                  f"fidelity_logits.npz (got {args.tf_ref_npz!r})", file=sys.stderr)
+            return 2
 
     if not (REPO_ROOT / "src").is_dir():
         print(f"[fatal] src/ not found under repo root: {REPO_ROOT}", file=sys.stderr)
@@ -152,7 +171,8 @@ def main() -> int:
     k = _load_kernel()
 
     config_tag = build_config_tag(args.dataset, args.bits, args.t, args.n_samples,
-                                  args.batch_size, args.dtype, args.quantizer_seed, args.links)
+                                  args.batch_size, args.dtype, args.quantizer_seed, args.links,
+                                  args.teacher_forced)
     work_dir = Path(args.out) / config_tag
     work_dir.mkdir(parents=True, exist_ok=True)
     upstream_work = work_dir / "_RecursiveMAS_work"
@@ -209,6 +229,8 @@ def main() -> int:
             "FIDELITY_WORK_DIR": str(work_dir),
             "FIDELITY_SRC_ROOT": str(REPO_ROOT),
             "VB_LINKS": args.links,
+            "TEACHER_FORCED": "1" if args.teacher_forced else "0",
+            "TF_REF_NPZ": str(Path(args.tf_ref_npz).resolve()) if args.tf_ref_npz else "",
             "PYTHONDONTWRITEBYTECODE": "1",
         })
 
@@ -276,7 +298,10 @@ def main() -> int:
             "batch_size": args.batch_size, "dataset": args.dataset, "dtype": args.dtype,
             "capture": capture, "links": args.links, "config_tag": config_tag,
             "seed": 42, "generation_seed": 42, "quantizer_seed": args.quantizer_seed,
-            "decoding": "greedy" if capture else "sampled",
+            "teacher_forced": args.teacher_forced,
+            "tf_ref_npz": str(args.tf_ref_npz) if args.teacher_forced else None,
+            "decoding": ("teacher_forced" if args.teacher_forced
+                         else ("greedy" if capture else "sampled")),
             "upstream_commit": upstream_commit,
         },
         "final_accuracy": final_acc,

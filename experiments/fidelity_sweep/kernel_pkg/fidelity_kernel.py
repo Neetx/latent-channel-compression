@@ -82,6 +82,13 @@ _VB_MAXPOS = int(_vb_os.environ.get("MAX_LOGIT_POSITIONS", "256"))
 # (--seed) and from the problem subset/order; defaults to 42 so backends that do not
 # set it reproduce the original condition exactly.
 _VB_QSEED = int(_vb_os.environ.get("QUANTIZER_SEED", "42"))
+# Teacher-forced (aligned) capture. When TEACHER_FORCED=1 the generate hook does NOT
+# free-run: it forces every captured call along the paired full-precision REF token
+# sequence (TF_REF_NPZ) while the quantized channel stays active, recording the clean
+# per-position logits. The full-precision side reproduces the REF capture by construction
+# (greedy already followed these tokens) -- that identity is validation gate G0.
+_VB_TF = _vb_os.environ.get("TEACHER_FORCED", "0") == "1"
+_VB_TF_REF = _vb_os.environ.get("TF_REF_NPZ", "")
 # Output dir + src location are env-configurable so the SAME head runs on Kaggle
 # (defaults below) and Modal (FIDELITY_WORK_DIR=/work, FIDELITY_SRC_ROOT=/root).
 _VB_WORK = _vb_os.environ.get("FIDELITY_WORK_DIR", "/kaggle/working")
@@ -120,6 +127,91 @@ if _VB_BITS > 0:
 # Memory: positions are capped at _VB_MAXPOS per call. At K=512, MAXPOS=256,
 # B=4: 256*4*512*4 bytes * 2 (vals+idxs) ~= 4 MB per generate() call (CPU).
 _vb_logit_buffer = []  # list of dicts, one per generated batch
+
+# ---------- Teacher-forced (aligned) capture -------------------------------
+# Each captured generate() call is forced along the paired REF token sequence while the
+# quantized channel stays active; the CLEAN next-token logits (before the forcing) are
+# recorded into the same {vals,idxs,full_lse,tail_log} schema, so the NPZ + analysis are
+# unchanged. Call c is paired to REF NPZ ``batch{c}`` by call order (the pipeline issues
+# the same calls in the same order; forcing REF content keeps control flow aligned).
+_vb_tf_ref = None
+_vb_tf_call = [0]
+if _VB_TF:
+    import numpy as _vb_np_tf
+    _vb_tf_ref = dict(_vb_np_tf.load(_VB_TF_REF))
+    print(f"[fidelity] teacher-forced: loaded REF tokens from {_VB_TF_REF} "
+          f"({int(_vb_tf_ref.get('n_batches', 0))} calls)", flush=True)
+
+class _VBTFProcessor:
+    """Records the clean per-position logits, then forces the REF token so the prefix
+    stays aligned for every subsequent position."""
+    def __init__(self, ref_idx, ref_lse):
+        import torch as _t
+        self._ref = _t.as_tensor(ref_idx, dtype=_t.long)   # (T, B) teacher tokens
+        self._lse = ref_lse                                # (T, B) numpy; ==0 marks REF padding
+        self._step = 0
+        self._vals = []; self._idxs = []; self._flse = []; self._tail = []
+    def __call__(self, input_ids, scores):
+        import torch as _t
+        with _t.no_grad():
+            sc = scores.detach().float().cpu()
+            k = min(_VB_TOPK, sc.shape[-1])
+            vals, idxs = sc.topk(k, dim=-1)
+            full_lse = _t.logsumexp(sc, dim=-1)
+            topk_lse = _t.logsumexp(vals, dim=-1)
+            diff = full_lse - topk_lse
+            tail_log = full_lse + _t.log1p(-_t.exp(-diff).clamp(min=1e-12))
+            self._vals.append(vals.numpy())
+            self._idxs.append(idxs.numpy().astype("int32"))
+            self._flse.append(full_lse.numpy())
+            self._tail.append(tail_log.numpy())
+        forced = self._ref[self._step].to(scores.device)
+        out = _t.full_like(scores, float("-inf"))
+        out.scatter_(1, forced.unsqueeze(1), 0.0)
+        self._step += 1
+        return out
+    def finalize(self):
+        import numpy as _np
+        vals = _np.stack(self._vals, 0); idxs = _np.stack(self._idxs, 0)
+        flse = _np.stack(self._flse, 0).copy(); tail = _np.stack(self._tail, 0)
+        n = min(flse.shape[0], self._lse.shape[0])
+        flse[:n][self._lse[:n] == 0.0] = 0.0   # mirror REF padding so valid_len trims identically
+        return {"vals": vals, "idxs": idxs, "full_lse": flse, "tail_log": tail}
+
+def _vb_tf_forced_generate(_orig, self, args, kwargs, user_wants_dict):
+    from transformers import LogitsProcessorList as _LPL
+    c = _vb_tf_call[0]; _vb_tf_call[0] += 1
+    key = f"batch{c}_idxs"
+    if _vb_tf_ref is None or key not in _vb_tf_ref:
+        # An extra generate() call beyond the paired REF batches (e.g. an answer-format pass).
+        # Free-run it WITHOUT recording, so the recorded buffer stays aligned with REF.
+        _nb = int(_vb_tf_ref.get("n_batches", 0)) if _vb_tf_ref is not None else 0
+        print(f"[fidelity] TF call c={c}: no REF batch (n_batches={_nb}); free-run, not recorded",
+              flush=True)
+        out = _orig(self, *args, **kwargs)
+        return out if (user_wants_dict and hasattr(out, "sequences")) else getattr(out, "sequences", out)
+    ref_idx = _vb_tf_ref[key][:, :, 0]                  # (T, B) top-1 teacher tokens
+    ref_lse = _vb_tf_ref[f"batch{c}_full_lse"]           # (T, B)
+    T = int(ref_idx.shape[0])
+    proc = _VBTFProcessor(ref_idx, ref_lse)
+    lp = kwargs.get("logits_processor")
+    kwargs["logits_processor"] = _LPL(list(lp) + [proc]) if lp else _LPL([proc])
+    kwargs["max_new_tokens"] = T
+    # NB: deliberately NO min_new_tokens -- it installs a MinNewTokensLengthLogitsProcessor
+    # that suppresses EOS (logit -> -inf) in the RECORDED scores, which the free-running REF
+    # does not, corrupting G0 near sequence end. Forcing the REF tokens (which include EOS at
+    # the natural stop) reproduces REF's length without it.
+    kwargs["do_sample"] = False
+    kwargs["return_dict_in_generate"] = True
+    kwargs["output_scores"] = False
+    kwargs.pop("max_length", None); kwargs.pop("num_beams", None)
+    out = _orig(self, *args, **kwargs)
+    _vb_logit_buffer.append(proc.finalize())
+    # _orig may return a GenerateOutput (has .sequences) or a bare sequences tensor,
+    # depending on the model's generation_config; handle both.
+    seq = getattr(out, "sequences", out)
+    return out if (user_wants_dict and hasattr(out, "sequences")) else seq
+
 def _vb_install_generate_hook():
     if not _VB_CAPTURE:
         return
@@ -133,6 +225,8 @@ def _vb_install_generate_hook():
 
     def _patched_generate(self, *args, **kwargs):
         user_wants_dict = kwargs.get("return_dict_in_generate", False)
+        if _VB_TF:
+            return _vb_tf_forced_generate(_orig_generate, self, args, kwargs, user_wants_dict)
         kwargs["return_dict_in_generate"] = True
         kwargs["output_scores"] = True
         out = _orig_generate(self, *args, **kwargs)
