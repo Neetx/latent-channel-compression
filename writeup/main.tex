@@ -110,11 +110,16 @@ of TurboQuant~\citep{turboquant2026}.
 
 \paragraph{Multi-agent systems and latent communication.}
 Multi-agent language-model systems improve reasoning by having models propose and critique
-answers, usually through text~\citep{debate}. A separate line replaces text with latent
-vectors: continuous-thought reasoning~\citep{coconut} and the recursive latent system we
-study, RecursiveMAS~\citep{recursivemas2026}, pass dense activations between agents. Such
-latent channels are precisely what a low-bit transport would compress, which motivates our
-study.
+answers, usually through text~\citep{debate}. A growing line replaces text with latent vectors:
+continuous-thought reasoning~\citep{coconut} and, between agents, systems that exchange hidden
+states directly---Interlat~\citep{interlat}, LatentMAS~\citep{latentmas}, and heterogeneous
+latent communication~\citep{visionwormhole}---including the recursive system we study,
+RecursiveMAS~\citep{recursivemas2026}. These works \emph{design or learn} the latent channel, and
+Interlat additionally \emph{learns} to compress it into fewer reasoning steps for latency. We
+instead take a \emph{released} recursive latent channel as given and ask a different question: how
+faithful its behavior remains under a training-free, data-oblivious, low-bit quantization of the
+transmitted vectors. Such latent channels are precisely what a low-bit transport would compress,
+which motivates the study.
 
 \paragraph{Behavioral fidelity beyond accuracy.}
 Compression is usually judged by aggregate benchmark accuracy. We instead separate
