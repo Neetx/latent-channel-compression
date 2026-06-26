@@ -496,6 +496,17 @@ changes individual answers and most light-tier greedy trajectories. ``Answer
 preserving'' is therefore meaningful only as a population-level shorthand; it must
 not be read as preserving every answer or every reasoning trace.
 
+Symmetrically, the headline divergence rate should not be read as $51$--$93\%$ of
+\emph{behavior} changing. Conditioning the outcome on whether the trajectory diverged,
+$89$--$91\%$ of diverged trajectories still produce the same final outcome (unit-test pass/fail on
+MBPP+, boxed answer on Math500), and the per-problem probability that divergence coincides with an
+outcome flip is only $8.6$--$10.6\%$ across cells. The greedy token path changes wholesale, but it
+rarely crosses a task-relevant decision boundary---the operationally interesting object is exactly
+that small, low-margin subset where it does (Figure~\ref{fig:tfmargin}). The $\sim$90\% preserved
+fraction is moreover stable across tasks and tiers despite the $51$--$93\%$ spread in raw
+divergence, consistent with a margin-tipping mechanism in which the per-decision flip probability,
+not the cumulative path divergence, governs the outcome.
+
 The MBPP+ result weakens a simple redundancy explanation. Code tokens are themselves
 the evaluated output, yet the light and scaled sampled ladders remain flat. The scaled
 tier's reduced churn and trajectory divergence on MBPP+ are now explained mechanistically by the
