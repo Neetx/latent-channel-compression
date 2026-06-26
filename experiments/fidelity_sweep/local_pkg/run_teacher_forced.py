@@ -86,6 +86,8 @@ def main() -> int:
     ap.add_argument("--dataset", default="mbppplus")
     ap.add_argument("--tiers", nargs="+", default=["light", "scaled"], choices=list(TIERS))
     ap.add_argument("--n", type=int, default=250)
+    ap.add_argument("--bits", nargs="+", type=int, default=[4],
+                    help="INT bit-widths to capture teacher-forced; the REF is reused across bits")
     ap.add_argument("--out", default=None)
     ap.add_argument("--python", default=sys.executable)
     args = ap.parse_args()
@@ -99,18 +101,21 @@ def main() -> int:
         return 4
     atexit.register(release_cell_lock, lock)
 
-    print(f"=== TEACHER-FORCED {args.dataset} INT4 b={BATCH}  tiers={args.tiers}  out={out}  "
-          f"{time.strftime('%Y-%m-%d %H:%M:%S')} ===", flush=True)
-    tf_tag = build_config_tag(args.dataset, 4, 3, args.n, BATCH, "auto", teacher_forced=True)
+    def tf_json_for(out_tier, bit):
+        tag = build_config_tag(args.dataset, bit, 3, args.n, BATCH, "auto", teacher_forced=True)
+        return out_tier / tag / f"fidelity_{tag}.json"
+
+    print(f"=== TEACHER-FORCED {args.dataset} INT b={BATCH}  tiers={args.tiers} bits={args.bits}  "
+          f"out={out}  {time.strftime('%Y-%m-%d %H:%M:%S')} ===", flush=True)
     summary = []
     for tier in args.tiers:
         style = TIERS[tier]
         out_tier = out / tier
         out_tier.mkdir(parents=True, exist_ok=True)
-        tf_json = out_tier / tf_tag / f"fidelity_{tf_tag}.json"
-        if _valid(tf_json, args.n, True):
-            print(f"[skip] {tier}: valid TF result exists", flush=True)
-            summary.append({"tier": tier, "status": "reused"}); continue
+        pending = [b for b in args.bits if not _valid(tf_json_for(out_tier, b), args.n, True)]
+        if not pending:
+            print(f"[skip] {tier}: all bits {args.bits} already valid", flush=True)
+            summary.append({"tier": tier, "status": "reused", "bits": args.bits}); continue
 
         ref_npz, how = resolve_ref_npz(style, args.dataset, out_tier, args.n)
         if ref_npz is None:
@@ -121,18 +126,19 @@ def main() -> int:
             ref_npz, how = resolve_ref_npz(style, args.dataset, out_tier, args.n)
             if ref_npz is None:
                 print(f"[fatal] {tier} REF produced no valid npz", file=sys.stderr); return 3
-        print(f"[ref] {tier}: teacher tokens from {ref_npz} ({how})", flush=True)
+        print(f"[ref] {tier}: teacher tokens from {ref_npz} ({how}); bits to run: {pending}", flush=True)
 
-        if _run(args.python, style, args.dataset, args.n, 4, out_tier,
-                out_tier / "tf_int4.log",
-                ["--teacher-forced", "--tf-ref-npz", str(ref_npz)]) != 0:
-            print(f"[fatal] {tier} TF-INT4 failed", file=sys.stderr); return 3
-        if not _valid(tf_json, args.n, True):
-            print(f"[fatal] {tier} TF-INT4 invalid result", file=sys.stderr); return 3
-        summary.append({"tier": tier, "status": "done", "ref": how})
+        for bit in pending:
+            if _run(args.python, style, args.dataset, args.n, bit, out_tier,
+                    out_tier / f"tf_int{bit}.log",
+                    ["--teacher-forced", "--tf-ref-npz", str(ref_npz)]) != 0:
+                print(f"[fatal] {tier} TF-INT{bit} failed", file=sys.stderr); return 3
+            if not _valid(tf_json_for(out_tier, bit), args.n, True):
+                print(f"[fatal] {tier} TF-INT{bit} invalid result", file=sys.stderr); return 3
+            summary.append({"tier": tier, "bit": bit, "status": "done", "ref": how})
 
     (out / "TEACHER_FORCED_DONE").write_text(json.dumps(
-        {"dataset": args.dataset, "tiers": args.tiers, "batch": BATCH,
+        {"dataset": args.dataset, "tiers": args.tiers, "bits": args.bits, "batch": BATCH,
          "completed": summary, "finished": time.strftime("%Y-%m-%d %H:%M:%S")}, indent=2))
     print(f"=== TEACHER-FORCED DONE {time.strftime('%H:%M:%S')} -> {out/'TEACHER_FORCED_DONE'} ===",
           flush=True)
