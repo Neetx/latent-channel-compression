@@ -82,10 +82,28 @@ Math500 the gap nearly vanishes and slightly reverses, and the attenuation compo
 general capacity property; it appears on code and not on math, mirroring the free-running tier-gap
 pattern (~40 pp on MBPP+, ~0 on Math500).
 
+## Bit-rate dose-response (teacher-forced INT at 2/3/4/6/8 bits, REF reused)
+
+Reproduce: `python ../analysis/teacher_forced_dose.py`.
+
+| bits | light flip-rate | light median \|logit diff\| | scaled flip-rate | scaled median \|logit diff\| |
+|---:|---:|---:|---:|---:|
+| 2 | 4.5% | 0.375 | 3.0% | 0.500 |
+| 3 | 4.2% | 0.375 | 2.2% | 0.125 |
+| 4 | 3.9% | 0.250 | 2.1% | 0.125 |
+| 6 | 3.6% | 0.250 | 2.0% | 0.125 |
+| 8 | 3.5% | 0.250 | 2.0% | 0.125 |
+
+The flip rate is **monotone** in bits on both tiers (fewer bits perturb more and flip more), and
+**scaled stays below light at every rate** (the tier gap is not an INT4 artifact). The response is
+**gentle / buffered**: even 2-bit quantization, which roughly quadruples the median scaled
+perturbation ($0.125\to0.500$), adds only ~1 pp of flips. Consistent with margin-tipping: the REF
+margin distribution, not the perturbation magnitude, governs the flip rate.
+
 ## Limitations
 
-- Single generation seed (42), single quantizer rotation (42), single problem subset, INT4 only,
-  two tasks (MBPP+ and the Math500 control).
+- Single generation seed (42), single quantizer rotation (42), single problem subset,
+  two tasks (MBPP+ and the Math500 control); the bit-rate dose-response is MBPP+ only.
 - The 128-position window and top-K=256 truncation (rank censored >256 at only ~0.2 % of
   positions). The decomposition is Oaxaca with light as the reference weighting; the qualitative
   split (attenuation ≫ margin distribution) is insensitive to the reference choice.

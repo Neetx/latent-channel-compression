@@ -427,6 +427,26 @@ magnitude, from $+1.39$ pp to $-0.18$ pp. The
 larger constellation's noise-absorption advantage is therefore task-conditioned, not a general
 capacity property, mirroring the $\sim$40 pp (MBPP+) versus $\sim$0 (Math500) free-running contrast.
 
+\paragraph{Bit-rate dose-response.}
+Sweeping the channel bit-rate (teacher-forced INT at $2/3/4/6/8$ bits, the REF reused) confirms the
+drift is dose-dependent yet buffered (Figure~\ref{fig:tfdose}). The flip rate is monotone in both
+tiers---fewer bits perturb more and flip more (light $3.5\%$ at 8 bits rising to $4.5\%$ at 2;
+scaled $2.0\%$ to $3.0\%$)---and scaled stays below light at \emph{every} rate, so the tier gap is
+not an INT4 artifact. The response is, however, strikingly gentle: even 2-bit quantization, which
+roughly quadruples the median per-position logit perturbation on scaled ($0.125\to0.500$), adds
+only ${\sim}1$ pp of flips. The REF margin distribution, not the perturbation magnitude, governs
+how often a decision is tipped---the same margin-tipping picture, now as a function of rate.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.58\linewidth]{figures/tf_dose_response.pdf}
+\caption{\textbf{The bit-rate dose-response is monotone but buffered.} Teacher-forced arg-max flip
+rate versus channel bit-rate on MBPP+. Flips increase monotonically as bits fall, on both tiers,
+and scaled stays below light at every rate; yet even 2-bit quantization adds only ${\sim}1$ pp---the
+REF margin distribution buffers the flip rate against the growing perturbation.}
+\label{fig:tfdose}
+\end{figure}
+
 \subsection{Independent cloud Math500 corroboration}
 
 An earlier fp32 T4 ladder at $n=250$ is flat within its uncertainty
@@ -540,9 +560,8 @@ selection-conditioned estimate). We evaluate fake quantization and the TurboQuan
 
 The highest-value next steps are: (i) sweep the generation seed and problem subset on
 MBPP+ (the five-quantizer-rotation matrix is complete and confirms the light/scaled gap,
-$+40.2$ pp $[+34.9,+45.7]$); (ii) extend the aligned mechanism analysis to a second task and
-to additional bit rates ($2/3/4/6/8$), testing whether the margin-tipping/attenuation account
-holds off MBPP+ and whether the two channels separate at higher rates; (iii) implement the QJL
+$+40.2$ pp $[+34.9,+45.7]$); (ii) decompose the bit-rate dose-response by link type, testing
+whether the inner and outer channels---redundant at INT4---separate at higher rates; (iii) implement the QJL
 residual; (iv) test a tool-sensitive deliberation topology and a high-baseline non-math task;
 and (v) measure serialized bytes, latency, wall-clock time, and VRAM. Confirmatory claims should
 pre-specify the primary estimand, equivalence margin, seed pooling, and multiple-comparison policy.

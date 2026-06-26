@@ -147,7 +147,29 @@ ax.legend(loc="upper right")
 fig.savefig(OUT / "tf_flip_vs_margin.pdf")
 plt.close(fig)
 
+# ----------------------------------------------------------------------------
+# Figure 5 — teacher-forced bit-rate dose-response: flip rate vs INT bit-width.
+# Monotone in both tiers (fewer bits -> more flips), scaled below light at every rate, and
+# gentle (a ~4x perturbation jump at 2 bits adds only ~1 pp). Values: teacher_forced_dose.py.
+# ----------------------------------------------------------------------------
+dose_bits = [2, 3, 4, 6, 8]
+dose_light = [4.5, 4.2, 3.9, 3.6, 3.5]
+dose_scaled = [3.0, 2.2, 2.1, 2.0, 2.0]
+fig, ax = plt.subplots(figsize=(5.0, 3.0))
+ax.plot(dose_bits, dose_light, "-o", color=OI["sky"], label="light (~1.5B)", lw=1.6, ms=5)
+ax.plot(dose_bits, dose_scaled, "-s", color=OI["vermillion"], label="scaled (~4B)", lw=1.6, ms=5)
+for x, lv, sv in zip(dose_bits, dose_light, dose_scaled):
+    ax.annotate(f"{lv:.1f}", (x, lv), ha="center", va="bottom", fontsize=6.5, xytext=(0, 3), textcoords="offset points")
+    ax.annotate(f"{sv:.1f}", (x, sv), ha="center", va="top", fontsize=6.5, xytext=(0, -4), textcoords="offset points")
+ax.set_xticks(dose_bits)
+ax.set_xlabel("bits per coordinate")
+ax.set_ylabel("teacher-forced flip rate (%)")
+ax.set_ylim(0, 5.5)
+ax.legend(loc="upper right")
+fig.savefig(OUT / "tf_dose_response.pdf")
+plt.close(fig)
+
 print("wrote:", OUT / "dissociation.pdf", OUT / "tier_task_divergence.pdf", OUT / "cloud_ladder.pdf",
-      OUT / "tf_flip_vs_margin.pdf")
+      OUT / "tf_flip_vs_margin.pdf", OUT / "tf_dose_response.pdf")
 print(f"  MBPP+ rotation means: light={mbpp_light.mean():.1f}+-{mbpp_light.std():.1f}  "
       f"scaled={mbpp_scaled.mean():.1f}+-{mbpp_scaled.std():.1f}")
